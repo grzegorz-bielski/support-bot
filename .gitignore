@@ -1,0 +1,14 @@
+target/
+.idea/
+.bloop
+.metals
+.scala-build
+metals.sbt
+.vscode/
+/project/project/
+.java-version
+.bsp/
+.env
+.DS_Store
+resources
+
