@@ -6,6 +6,7 @@
 //> using dep com.github.haifengl::smile-scala:3.1.1
 //> using dep org.apache.pdfbox:pdfbox:3.0.3
 
+import cats.syntax.all.*
 import cats.effect.*
 import fs2.Stream
 import sttp.client4.httpclient.fs2.HttpClientFs2Backend
@@ -31,37 +32,50 @@ import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
 // import org.apache.pdfbox.text.
 
-type Embeddings = Vector[(Chunk, EmbeddingData)]
+// type Embeddings = Vector[(Chunk, EmbeddingData)]
 
 final case class Chunk(text: String, metadata: Map[String, String] = Map.empty):
   def toEmbeddingInput: String =
     metadata.map((k, v) => s"$k: $v").mkString("\n") ++ s"\n$text"
 
-object Chunks:
-  def fromPDF(path: String): IO[Vector[Chunk]] =
+final case class Document(
+    id: String,
+    fragments: Vector[DocumentFragment]
+)
+
+final case class DocumentFragment(
+    index: Int,
+    chunk: Chunk
+)
+
+object Document:
+  def fromPDF(path: String): IO[Document] =
     IO.blocking(fromPDFUnsafe(path))
 
-  private def fromPDFUnsafe(path: String): Vector[Chunk] =
+  private def fromPDFUnsafe(path: String): Document =
     val file = File(path)
+    val fileName = file.getName
     val document = Loader.loadPDF(File(path))
 
     // 1 based index
-    (1 to document.getNumberOfPages)
-      .foldLeft(Vector.newBuilder[Chunk]): (builder, i) =>
+    val allFragments = (1 to document.getNumberOfPages)
+      .foldLeft(Vector.newBuilder[DocumentFragment]): (builder, i) =>
         val textStripper = new PDFTextStripper()
         textStripper.setStartPage(i)
         textStripper.setEndPage(i)
 
-        val chunks =
+        val metadata = Map("page" -> i.toString, "file" -> fileName)
+
+        builder.addAll:
           textStripper
             .getText(document)
             .sentences
             .toVector
-            .map:
-              Chunk(_, Map("page" -> i.toString, "file" -> file.getName))
-
-        builder.addAll(chunks)
+            .map: value =>
+              DocumentFragment(index = i, Chunk(value, metadata))
       .result()
+
+    Document(id = fileName, allFragments)
 
 class LLmService(backend: WebSocketStreamBackend[IO, Fs2Streams[IO]]):
   val openAI = OpenAI("ollama", uri"http://localhost:11434/v1")
@@ -76,20 +90,18 @@ class LLmService(backend: WebSocketStreamBackend[IO, Fs2Streams[IO]]):
         "2. Avoid statements like 'Based on the context, ...' or 'The context information...' or anything along those lines."
       ).mkString("\n")
     ),
-    // Message.UserMessage(
-    //   content = Content.TextContent("Hi, I need to calculate the sum of 2 and 3")
-    // )
+
     Message.UserMessage(
       content = Content.TextContent(
-       Vector(
-        "Context information is below.",
-        "---------------------",
-        context,
-        "---------------------",
-        "Given the context information and not prior knowledge, answer the query.",
-        s"Query: $query",
-        "Answer:"
-       ).mkString("\n")
+        Vector(
+          "Context information is below.",
+          "---------------------",
+          context,
+          "---------------------",
+          "Given the context information and not prior knowledge, answer the query.",
+          s"Query: $query",
+          "Answer:"
+        ).mkString("\n")
       )
     )
   )
@@ -111,31 +123,107 @@ class LLmService(backend: WebSocketStreamBackend[IO, Fs2Streams[IO]]):
     )
   )
 
-  // KNN, cosine similarity
-  def retrieve(
-    queryEmbeddings: Embeddings,
-    indexEmbeddings: Embeddings
-  ): IO[String] = 
-    // TODO: https://github.com/haifengl/smile/blob/76f79ecf902d066fa005ba86f7d51f6c176df458/scala/src/main/scala/smile/classification/package.scala
-    // https://platform.openai.com/docs/guides/embeddings/use-cases
-    // classification.knn(
-    //   x = queryEmbeddings.map(_._2.embedding),
-    // )
-    ???
+  // https://github.com/haifengl/smile/blob/76f79ecf902d066fa005ba86f7d51f6c176df458/scala/src/main/scala/smile/classification/package.scala
+  // https://platform.openai.com/docs/guides/embeddings/use-cases
+  // https://github.com/ZhengRui/minRAG/blob/main/rag_min.py
+  // https://github.com/openai/openai-cookbook/blob/main/examples/vector_databases/cassandra_astradb/Philosophical_Quotes_CQL.ipynb
+  // https://medium.com/@shravankoninti/mastering-rag-a-deep-dive-into-text-splitting-fafeffdcc00d
 
-  def createEmbedding(chunks: Vector[Chunk]) =
+  enum Embedding:
+    case Index(
+        chunk: Chunk,
+        value: Vector[Double],
+        documentId: String,
+        fragmentIndex: Int
+    )
+
+    case Query(
+        chunk: Chunk,
+        value: Vector[Double]
+    )
+
+  object KNN:
+    // https://en.wikipedia.org/wiki/Cosine_similarity
+    def cosineSimilarity(vec1: Vector[Double], vec2: Vector[Double]): Double =
+      val magnitude1 = math.sqrt(vec1.map(x => x * x).sum)
+      val magnitude2 = math.sqrt(vec2.map(x => x * x).sum)
+
+      dotProduct(vec1, vec2) / (magnitude1 * magnitude2)
+
+    def dotProduct(u: Vector[Double], v: Vector[Double]): Double =
+      (u lazyZip v).foldLeft(0d):
+        case (acc, (ui, vi)) => acc + (ui * vi)
+
+    def findKNearestNeighbors[T](
+        data: Vector[(Vector[Double], T)],
+        input: Vector[Double],
+        k: Int
+    ): Vector[(T, Double)] =
+      data
+        .map: (features, label) =>
+          (label, cosineSimilarity(features, input)) // TODO: move to Ordering in custom `compare`
+        .sortBy(-_._2)
+        .take(k)
+
+    // TODO: delegate to DB
+    def retrieve(
+        index: Vector[Embedding.Index], // assuming this comes from all the documents
+        query: Embedding.Query // to be classified
+    ): IO[Vector[Chunk]] =
+      IO.pure:
+        for
+          (neighbor, _) <- findKNearestNeighbors(
+            data = index.map(embedding => (embedding.value, embedding)),
+            input = query.value,
+            k = 3
+          )
+          // neighbor lookup window, like +/- 1 page
+          fragmentsIndexRange =
+            neighbor.fragmentIndex - 1 to neighbor.fragmentIndex + 1
+          // full scan...
+          neighboringChunk <- index.collect:
+            case Embedding.Index(chunk, _, documentId, fragmentIndex)
+                if neighbor.documentId == documentId && fragmentsIndexRange.contains(fragmentIndex) =>
+              chunk
+        yield neighboringChunk
+
+  def createEmbeddings(input: EmbeddingsInput) =
     openAI
       .createEmbeddings(
         EmbeddingsBody(
           model = EmbeddingsModel.CustomEmbeddingsModel("snowflake-arctic-embed"),
-          input = EmbeddingsInput.MultipleInput(chunks.map(_.toEmbeddingInput))
+          input = input
         )
       )
       .send(backend)
       .map(_.body)
       .rethrow
+
+  def createIndexEmbeddings(document: Document): IO[Vector[Embedding.Index]] =
+    createEmbeddings(
+      EmbeddingsInput.MultipleInput(
+        document.fragments.map(_.chunk.toEmbeddingInput)
+      )
+    )
       .map: embeddingResponse =>
-        chunks.zip(embeddingResponse.data)
+        document.fragments
+          .zip(embeddingResponse.data)
+          .map: (fragment, value) =>
+            Embedding.Index(
+              chunk = fragment.chunk,
+              value = value.embedding.toVector,
+              documentId = document.id,
+              fragmentIndex = fragment.index
+            )
+
+  def createQueryEmbeddings(chunk: Chunk): IO[Embedding.Query] =
+    createEmbeddings(EmbeddingsInput.SingleInput(chunk.toEmbeddingInput))
+      .map: response =>
+        Embedding.Query(
+          // TODO: assuming that single chunk will product one embedding, but we should validate it
+          value = response.data.head.embedding.toVector,
+          chunk = chunk
+        )
 
   def runChatCompletion(query: String, context: String) =
     openAI
@@ -154,30 +242,26 @@ class LLmService(backend: WebSocketStreamBackend[IO, Fs2Streams[IO]]):
             .drain
 
   def run: IO[Unit] =
-    // runChatCompletion
     for
       // offline - parsing and indexing
       _ <- IO.println("Chunking PDF")
-      chunks <- Chunks.fromPDF("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf")
-      _ <- IO.println(s"Chunked ${chunks.length} sentences")
+      document <- Document.fromPDF("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf")
       _ <- IO.println(s"Creating embeddings. It may take a while...")
-      indexEmbeddings <- createEmbedding(chunks)
-      // store indexEmbeddings in a database
-      _ <- IO.println("Embeddings created")
+      indexEmbeddings <- createIndexEmbeddings(document)
+      // TODO: store index embeddings on disk
 
-      // online - chat completion
       query = "How do I solve manual resolution with unresolved_games reason?"
-      queryEmbeddings <- createEmbedding(Vector(Chunk(query)))
-      // retrieve indexEmbeddings from database
-      context <- retrieve(queryEmbeddings, indexEmbeddings)
+      queryEmbeddings <- createQueryEmbeddings(Chunk(query))
 
-      _ <- runChatCompletion(query, context)
+      contextChunk <- KNN.retrieve(index = indexEmbeddings, query = queryEmbeddings)
+      _ <- IO.println(s"Retrieved context: ${contextChunk.map(_.toEmbeddingInput)}")
 
-      // _ <- IO.println(queryEmbeddings)
+      - <- IO.println("Asking for chat completion")
+      res <- runChatCompletion(
+        query = query,
+        context = contextChunk.map(_.toEmbeddingInput).mkString("\n")
+      )
     yield ()
-
-    // createEmbedding(Vector(Chunk("I am a sentence"), Chunk("I am another sentence")))
-    // .flatMap(IO.println)
 
 object Main extends IOApp.Simple:
   def run =
