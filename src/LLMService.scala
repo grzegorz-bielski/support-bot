@@ -16,54 +16,32 @@ import sttp.openai.requests.completions.chat.message.*
 import smile.nlp.*
 import sttp.openai.requests.embeddings.EmbeddingsRequestBody.*
 import sttp.openai.requests.embeddings.EmbeddingsResponseBody.*
+import LLMService.*
+
+type Example = ("User" | "Assistant", String)
+
+/** A prompt template.
+  *
+  * Based on
+  * https://github.com/anthropics/courses/blob/master/prompt_engineering_interactive_tutorial/Anthropic%201P/09_Complex_Prompts_from_Scratch.ipynb
+  */
+final case class Prompt(
+    taskContext: Option[String] = None, // system
+    toneContext: Option[String] = None, // system
+    taskDescription: Option[String] = None, // system
+    examples: Vector[Example] = Vector.empty, // user & assistant back and forth
+    queryContext: Option[String] = None, // user
+    query: String, // aka immediateTask, user
+    precognition: Option[String] = None, // user
+    outputFormatting: Option[String] = None, // user
+    prefill: Option[String] = None // assistant
+)
 
 final class LLMService(backend: WebSocketStreamBackend[IO, Fs2Streams[IO]]):
-  val openAI = OpenAI("ollama", uri"http://localhost:11434/v1")
+  val openAIProtocol = OpenAI("ollama", uri"http://localhost:11434/v1")
 
-  def bodyMessages(query: String, context: String) = Seq(
-    Message.SystemMessage(
-      content = Vector(
-        "You are an expert Q&A system that is trusted around the world.",
-        "Always answer the query using the provided, context information, and not prior knowledge",
-        "Some rules to follow:",
-        "1. Never directly reference the given context in your answer.",
-        "2. Avoid statements like 'Based on the context, ...' or 'The context information...' or anything along those lines."
-      ).mkString("\n")
-    ),
-    Message.UserMessage(
-      content = Content.TextContent(
-        Vector(
-          "Context information is below.",
-          "---------------------",
-          context,
-          "---------------------",
-          "Given the context information and not prior knowledge, answer the query.",
-          s"Query: $query",
-          "Answer:"
-        ).mkString("\n")
-      )
-    )
-  )
-
-  def chatRequestBody(query: String, context: String): ChatBody = ChatBody(
-    model = ChatCompletionModel.CustomChatCompletionModel("llama3.1"),
-    messages = bodyMessages(query, context),
-    tools = Some(
-      Seq(
-        // Tool.FunctionTool(
-        //   description = "This tool will return the sum of two numbers",
-        //   name = "sum",
-        //   parameters = Map(
-        //     "number1" -> """{ "type": "number" }""",
-        //     "number2" -> """{ "type": "number" }"""
-        //   )
-        // )
-      )
-    )
-  )
-
-  def createEmbeddings(input: EmbeddingsInput) =
-    openAI
+  private def createEmbeddings(input: EmbeddingsInput) =
+    openAIProtocol
       .createEmbeddings(
         EmbeddingsBody(
           model = EmbeddingsModel.CustomEmbeddingsModel("snowflake-arctic-embed"),
@@ -100,9 +78,9 @@ final class LLMService(backend: WebSocketStreamBackend[IO, Fs2Streams[IO]]):
           chunk = chunk
         )
 
-  def runChatCompletion(query: String, context: String) =
-    openAI
-      .createStreamedChatCompletion[IO](chatRequestBody(query, context))
+  def runChatCompletion(prompt: Prompt): IO[Unit] =
+    openAIProtocol
+      .createStreamedChatCompletion[IO](promptToChatBody(prompt))
       .send(backend)
       .map(_.body)
       .flatMap:
@@ -122,3 +100,49 @@ object LLMService:
       .resource[IO]()
       .map: backend =>
         LLMService(backend)
+
+  private def promptToChatBody(prompt: Prompt): ChatBody = ChatBody(
+    model = ChatCompletionModel.CustomChatCompletionModel("llama3.1"),
+    messages = bodyMessages(prompt),
+    tools = Some(
+      Seq(
+        // Tool.FunctionTool(
+        //   description = "This tool will return the sum of two numbers",
+        //   name = "sum",
+        //   parameters = Map(
+        //     "number1" -> """{ "type": "number" }""",
+        //     "number2" -> """{ "type": "number" }"""
+        //   )
+        // )
+      )
+    )
+  )
+
+
+  private def bodyMessages(prompt: Prompt): Vector[Message] =
+    val systemMessage = Message.SystemMessage(
+      content = Vector(
+        prompt.taskContext,
+        prompt.toneContext,
+        prompt.taskDescription
+      ).map(_.getOrElse("")).mkString("\n")
+    )
+
+    val examplesMessages = prompt.examples.map:
+      case ("User", text)      => Message.UserMessage(Content.TextContent(text))
+      case ("Assistant", text) => Message.AssistantMessage(text)
+
+    val userMessage = Message.UserMessage(
+      content = Content.TextContent(
+        Vector(
+          prompt.queryContext,
+          prompt.query.some,
+          prompt.precognition,
+          prompt.outputFormatting
+        ).map(_.getOrElse("")).mkString("\n")
+      )
+    )
+
+    val prefill = prompt.prefill.map(text => Message.AssistantMessage(text)).toVector
+
+    (systemMessage +: examplesMessages :+ userMessage) ++ prefill
