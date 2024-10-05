@@ -1,4 +1,5 @@
 package supportbot
+package rag
 
 import cats.syntax.all.*
 import cats.effect.*

@@ -1,9 +1,9 @@
 package supportbot
+package chat
 
 import cats.syntax.all.*
 import cats.effect.*
 import fs2.Stream
-import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 import sttp.client4.*
 import sttp.capabilities.fs2.*
 import sttp.model.Uri.*
@@ -13,10 +13,6 @@ import sttp.openai.OpenAIExceptions.OpenAIException
 import sttp.openai.requests.completions.chat.ChatRequestResponseData.ChatResponse
 import sttp.openai.requests.completions.chat.ChatRequestBody.{ChatBody, ChatCompletionModel}
 import sttp.openai.requests.completions.chat.message.*
-import smile.nlp.*
-import sttp.openai.requests.embeddings.EmbeddingsRequestBody.*
-import sttp.openai.requests.embeddings.EmbeddingsResponseBody.*
-import LLMService.*
 
 type Example = ("User" | "Assistant", String)
 
@@ -37,50 +33,37 @@ final case class Prompt(
     prefill: Option[String] = None // assistant
 )
 
-final class LLMService(backend: WebSocketStreamBackend[IO, Fs2Streams[IO]]):
-  val openAIProtocol = OpenAI("ollama", uri"http://localhost:11434/v1")
+trait ChatService[F[_]]:
+  def runChatCompletion(prompt: Prompt): F[Unit]
 
-  private def createEmbeddings(input: EmbeddingsInput) =
-    openAIProtocol
-      .createEmbeddings(
-        EmbeddingsBody(
-          model = EmbeddingsModel.CustomEmbeddingsModel("snowflake-arctic-embed"),
-          input = input
-        )
-      )
-      .send(backend)
-      .map(_.body)
-      .rethrow
-
-  def createIndexEmbeddings(document: Document): IO[Vector[Embedding.Index]] =
-    createEmbeddings(
-      EmbeddingsInput.MultipleInput(
-        document.fragments.map(_.chunk.toEmbeddingInput)
-      )
-    )
-      .map: embeddingResponse =>
-        document.fragments
-          .zip(embeddingResponse.data)
-          .map: (fragment, value) =>
-            Embedding.Index(
-              chunk = fragment.chunk,
-              value = value.embedding.toVector,
-              documentId = document.id,
-              fragmentIndex = fragment.index
-            )
-
-  def createQueryEmbeddings(chunk: Chunk): IO[Embedding.Query] =
-    createEmbeddings(EmbeddingsInput.SingleInput(chunk.toEmbeddingInput))
-      .map: response =>
-        Embedding.Query(
-          // TODO: assuming that single chunk will product one embedding, but we should validate it
-          value = response.data.head.embedding.toVector,
-          chunk = chunk
-        )
+final class OpenAIChatService(
+    backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
+    openAIProtocol: OpenAI,
+    model: Model
+) extends ChatService[IO]:
+  import OpenAIChatService.*
+  val chatModel = ChatCompletionModel.CustomChatCompletionModel(model)
 
   def runChatCompletion(prompt: Prompt): IO[Unit] =
     openAIProtocol
-      .createStreamedChatCompletion[IO](promptToChatBody(prompt))
+      .createStreamedChatCompletion[IO](
+        ChatBody(
+          model = chatModel,
+          messages = bodyMessages(prompt),
+          tools = Some(
+            Seq(
+              // Tool.FunctionTool(
+              //   description = "This tool will return the sum of two numbers",
+              //   name = "sum",
+              //   parameters = Map(
+              //     "number1" -> """{ "type": "number" }""",
+              //     "number2" -> """{ "type": "number" }"""
+              //   )
+              // )
+            )
+          )
+        )
+      )
       .send(backend)
       .map(_.body)
       .flatMap:
@@ -94,31 +77,7 @@ final class LLMService(backend: WebSocketStreamBackend[IO, Fs2Streams[IO]]):
             .compile
             .drain
 
-object LLMService:
-  def resource: Resource[IO, LLMService] =
-    HttpClientFs2Backend
-      .resource[IO]()
-      .map: backend =>
-        LLMService(backend)
-
-  private def promptToChatBody(prompt: Prompt): ChatBody = ChatBody(
-    model = ChatCompletionModel.CustomChatCompletionModel("llama3.1"),
-    messages = bodyMessages(prompt),
-    tools = Some(
-      Seq(
-        // Tool.FunctionTool(
-        //   description = "This tool will return the sum of two numbers",
-        //   name = "sum",
-        //   parameters = Map(
-        //     "number1" -> """{ "type": "number" }""",
-        //     "number2" -> """{ "type": "number" }"""
-        //   )
-        // )
-      )
-    )
-  )
-
-
+object OpenAIChatService:
   private def bodyMessages(prompt: Prompt): Vector[Message] =
     val systemMessage = Message.SystemMessage(
       content = Vector(

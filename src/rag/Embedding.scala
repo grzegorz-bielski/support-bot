@@ -1,4 +1,5 @@
 package supportbot
+package rag
 
 enum Embedding:
   case Index(
