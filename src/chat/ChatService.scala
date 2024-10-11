@@ -36,12 +36,10 @@ final case class Prompt(
 trait ChatService[F[_]]:
   def runChatCompletion(prompt: Prompt): F[Unit]
 
-final class OpenAIChatService(
-    backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
-    openAIProtocol: OpenAI,
-    model: Model
+final class SttpOpenAIChatService(openAIProtocol: OpenAI, model: Model)(using
+    backend: WebSocketStreamBackend[IO, Fs2Streams[IO]]
 ) extends ChatService[IO]:
-  import OpenAIChatService.*
+  import SttpOpenAIChatService.*
   val chatModel = ChatCompletionModel.CustomChatCompletionModel(model)
 
   def runChatCompletion(prompt: Prompt): IO[Unit] =
@@ -77,7 +75,7 @@ final class OpenAIChatService(
             .compile
             .drain
 
-object OpenAIChatService:
+object SttpOpenAIChatService:
   private def bodyMessages(prompt: Prompt): Vector[Message] =
     val systemMessage = Message.SystemMessage(
       content = Vector(

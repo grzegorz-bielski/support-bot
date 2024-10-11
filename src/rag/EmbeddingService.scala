@@ -18,11 +18,8 @@ trait EmbeddingService[F[_]]:
   def createIndexEmbeddings(document: Document): F[Vector[Embedding.Index]]
   def createQueryEmbeddings(chunk: Chunk): F[Embedding.Query]
 
-final class OpenAIEmbeddingService(
-    backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
-    openAIProtocol: OpenAI,
-    model: Model
-) extends EmbeddingService[IO]:
+final class SttpOpenAIEmbeddingService(openAIProtocol: OpenAI, model: Model)(using backend: SttpBackend)
+    extends EmbeddingService[IO]:
   val embeddingModel = EmbeddingsModel.CustomEmbeddingsModel(model)
 
   def createIndexEmbeddings(document: Document) =
@@ -37,7 +34,7 @@ final class OpenAIEmbeddingService(
           .map: (fragment, value) =>
             Embedding.Index(
               chunk = fragment.chunk,
-              value = value.embedding.toVector,
+              value = value.embedding.toVector.map(_.toFloat), // returned value is usually float32
               documentId = document.id,
               fragmentIndex = fragment.index
             )
@@ -47,7 +44,7 @@ final class OpenAIEmbeddingService(
       .map: response =>
         Embedding.Query(
           // TODO: assuming that single chunk will product one embedding, but we should validate it
-          value = response.data.head.embedding.toVector,
+          value = response.data.head.embedding.toVector.map(_.toFloat), // returned value is usually float32
           chunk = chunk
         )
 

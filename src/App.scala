@@ -5,6 +5,8 @@
 //> using dep com.softwaremill.sttp.client4::cats:4.0.0-M17
 //> using dep com.github.haifengl::smile-scala:3.1.1
 //> using dep org.apache.pdfbox:pdfbox:3.0.3
+//> using dep "com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.30.15"
+//> using dep "com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.30.15"
 
 package supportbot
 
@@ -13,29 +15,40 @@ import cats.effect.syntax.all.*
 import cats.effect.*
 
 import sttp.client4.httpclient.fs2.HttpClientFs2Backend
+import com.github.plokhotnyuk.jsoniter_scala.core.*
 import sttp.openai.OpenAI
 import sttp.model.Uri.*
 
 import supportbot.rag.*
 import supportbot.chat.*
+import supportbot.clickhouse.ClickHouseClient
 
 // TODO:
 // - vector store integration
 // - UI
 
 object Main extends ResourceApp.Simple:
-  def run = 
-    for 
-      backend <- HttpClientFs2Backend.resource[IO]()
-      vectorStore <- InMemoryVectorStore.of.toResource
+  def run =
+    for
+      given SttpBackend <- SttpBackend.resource
+
+      vectorStore = rag.clickhouse.ClickHouseVectorStore.sttpBased(
+        ClickHouseClient.Config(
+          url = "http://localhost:8123",
+          username = "default",
+          password = "default"
+        )
+      )
+      _ <- vectorStore.migrate().toResource
 
       openAIProtocol = OpenAI("ollama", uri"http://localhost:11434/v1")
-      chatService = OpenAIChatService(backend, openAIProtocol, model = Model("llama3.1"))
-      embeddingService = OpenAIEmbeddingService(backend, openAIProtocol, model = Model("snowflake-arctic-embed"))
+      chatService = SttpOpenAIChatService(openAIProtocol, model = Model("llama3.1"))
+      embeddingService = SttpOpenAIEmbeddingService(openAIProtocol, model = Model("snowflake-arctic-embed"))
 
-      _ <-  program(vectorStore, chatService, embeddingService).toResource
-
+      _ <- program(vectorStore, chatService, embeddingService).toResource
     yield ()
+
+  val userQuery = "How do I solve manual resolution with unresolved_games reason?"
 
   def appPrompt(query: String, context: Option[String]) = Prompt(
     taskContext = "You are an expert Q&A system that is trusted around the world.".some,
@@ -56,7 +69,11 @@ object Main extends ResourceApp.Simple:
     ).mkString("\n").some
   )
 
-  def program(vectorStore: VectorStore[IO], chatService: ChatService[IO], embeddingService: EmbeddingService[IO]): IO[Unit] =
+  def program(
+      vectorStore: VectorStore[IO],
+      chatService: ChatService[IO],
+      embeddingService: EmbeddingService[IO]
+  ): IO[Unit] =
     for
       // offline - parsing and indexing
       _ <- IO.println("Chunking PDF")
@@ -66,15 +83,14 @@ object Main extends ResourceApp.Simple:
       _ <- vectorStore.store(indexEmbeddings)
 
       // online - chat
-      query = "How do I solve manual resolution with unresolved_games reason?"
-      queryEmbeddings <- embeddingService.createQueryEmbeddings(Chunk(query))
+      queryEmbeddings <- embeddingService.createQueryEmbeddings(Chunk(userQuery))
       contextChunk <- vectorStore.retrieve(queryEmbeddings)
       _ <- IO.println(s"Retrieved context: ${contextChunk.map(_.toEmbeddingInput)}")
 
       - <- IO.println("Asking for chat completion")
       res <- chatService.runChatCompletion(
         appPrompt(
-          query = query,
+          query = userQuery,
           context = contextChunk.map(_.toEmbeddingInput).mkString("\n").some
         )
       )

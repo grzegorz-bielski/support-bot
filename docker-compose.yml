@@ -1,0 +1,12 @@
+version: '3.8'
+name: support-bot
+services:
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3.12-alpine
+    ports:
+      - "8123:8123"
+    ulimits:
+      nofile: 262144
+    environment:
+      - CLICKHOUSE_PASSWORD=default

@@ -24,8 +24,8 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
       IO.pure:
         for
           (neighbor, _) <- findKNearestNeighbors(
-            data = index.map(embedding => (embedding.value, embedding)),
-            input = query.value,
+            data = index.map(embedding => (embedding.value.map(_.toDouble), embedding)),
+            input = query.value.map(_.toDouble),
             k = 3
           )
           // neighbor lookup window, like +/- 1 page
