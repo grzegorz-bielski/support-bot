@@ -19,7 +19,8 @@ import sttp.model.Uri
 import ClickHouseClient.*
 
 trait ClickHouseClient[F[_]]:
-  def streamQuery[T: JsonValueCodec](query: String): Stream[F, T]
+  def streamQueryJson[T: JsonValueCodec](query: String): Stream[F, T]
+  def streamQueryTextLines(query: String): Stream[F, String]
   def executeQuery(query: String): F[Unit]
 
 object ClickHouseClient:
@@ -48,25 +49,23 @@ final class SttpClickHouseClient(config: ClickHouseClient.Config)(using backend:
       .rethrow
       .void
 
-  def streamQuery[T: JsonValueCodec](query: String): Stream[IO, T] =
+  def streamQueryJson[T: JsonValueCodec](query: String): Stream[IO, T] =
+    streamQueryTextLines(query).through:
+      _.collect:
+        case line if line.nonEmpty =>
+          Try(readFromString(line)).toEither
+            .leftMap(error => ClickHouseClient.Error.ParsingFailed(error.getMessage, line))
+      .rethrow
+
+  def streamQueryTextLines(query: String): Stream[IO, String] =
     Stream
-      .eval(
+      .eval:
         requestOf(query).response(asStreamUnsafe(Fs2Streams[IO])).send(backend)
-      )
       .map(_.body.leftMap(ClickHouseClient.Error.QueryFailed.apply))
       .rethrow
       .flatten
-      .through(deserialize)
-
-  private def deserialize[T: JsonValueCodec]: Pipe[IO, Byte, T] =
-    _.through(text.utf8.decode)
+      .through(text.utf8.decode)
       .through(text.lines)
-      .through:
-        _.collect:
-          case line if line.nonEmpty =>
-            Try(readFromString(line)).toEither
-              .leftMap(error => ClickHouseClient.Error.ParsingFailed(error.getMessage, line))
-        .rethrow
 
   private def requestOf(query: String) =
     basicRequest

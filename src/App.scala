@@ -5,8 +5,9 @@
 //> using dep com.softwaremill.sttp.client4::cats:4.0.0-M17
 //> using dep com.github.haifengl::smile-scala:3.1.1
 //> using dep org.apache.pdfbox:pdfbox:3.0.3
-//> using dep "com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.30.15"
-//> using dep "com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.30.15"
+//> using dep com.davegurnell::unindent:1.8.0
+//> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.30.15
+//> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.30.15
 
 package supportbot
 
@@ -80,6 +81,7 @@ object Main extends ResourceApp.Simple:
       document <- DocumentLoader.loadPDF("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf")
       _ <- IO.println(s"Creating embeddings. It may take a while...")
       indexEmbeddings <- embeddingService.createIndexEmbeddings(document)
+      _ <- IO.println(s"Created ${indexEmbeddings.size} embeddings.")
       _ <- vectorStore.store(indexEmbeddings)
 
       // online - chat

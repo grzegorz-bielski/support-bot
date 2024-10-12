@@ -37,4 +37,4 @@ object DocumentLoader:
               DocumentFragment(index = i, Chunk(value, metadata))
       .result()
 
-    Document(id = fileName, allFragments)
+    Document(id = fileName, version = 1, fragments = allFragments)

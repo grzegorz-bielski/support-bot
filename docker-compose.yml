@@ -9,4 +9,13 @@ services:
     ulimits:
       nofile: 262144
     environment:
+      - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=default
+      - CLICKHOUSE_DATABASE=default
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+
+volumes:
+  clickhouse-data:
+  clickhouse-logs:

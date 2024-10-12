@@ -31,14 +31,14 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
           // neighbor lookup window, like +/- 1 page
           fragmentsIndexRange =
             neighbor.fragmentIndex - 1 to neighbor.fragmentIndex + 1
-          // full scan...
+          // full scan... 
           neighboringChunk <- index.collect:
-            case Embedding.Index(chunk, _, documentId, fragmentIndex)
-                if neighbor.documentId == documentId && fragmentsIndexRange.contains(fragmentIndex) =>
-              chunk
+            case embedding: Embedding.Index
+                if neighbor.documentId == embedding.documentId &&
+                  fragmentsIndexRange.contains(embedding.fragmentIndex) =>
+              embedding.chunk
         yield neighboringChunk
 
-    // https://en.wikipedia.org/wiki/Cosine_similarity
     private def cosineSimilarity(vec1: Vector[Double], vec2: Vector[Double]): Double =
       val magnitude1 = math.sqrt(vec1.map(x => x * x).sum)
       val magnitude2 = math.sqrt(vec2.map(x => x * x).sum)

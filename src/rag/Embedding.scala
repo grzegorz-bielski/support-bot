@@ -6,6 +6,7 @@ enum Embedding:
       chunk: Chunk,
       value: Vector[Float],
       documentId: String,
+      documentVersion: Int,
       fragmentIndex: Int
   )
 

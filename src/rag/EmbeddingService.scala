@@ -20,9 +20,10 @@ trait EmbeddingService[F[_]]:
 
 final class SttpOpenAIEmbeddingService(openAIProtocol: OpenAI, model: Model)(using backend: SttpBackend)
     extends EmbeddingService[IO]:
+  // assuming the model returns vectors in float32, which usually is true
   val embeddingModel = EmbeddingsModel.CustomEmbeddingsModel(model)
 
-  def createIndexEmbeddings(document: Document) =
+  def createIndexEmbeddings(document: Document): IO[Vector[Embedding.Index]] =
     createEmbeddings(
       EmbeddingsInput.MultipleInput(
         document.fragments.map(_.chunk.toEmbeddingInput)
@@ -34,17 +35,18 @@ final class SttpOpenAIEmbeddingService(openAIProtocol: OpenAI, model: Model)(usi
           .map: (fragment, value) =>
             Embedding.Index(
               chunk = fragment.chunk,
-              value = value.embedding.toVector.map(_.toFloat), // returned value is usually float32
+              value = value.embedding.toVector.map(_.toFloat),
               documentId = document.id,
+              documentVersion = document.version,
               fragmentIndex = fragment.index
             )
 
-  def createQueryEmbeddings(chunk: Chunk) =
+  def createQueryEmbeddings(chunk: Chunk): IO[Embedding.Query] =
     createEmbeddings(EmbeddingsInput.SingleInput(chunk.toEmbeddingInput))
       .map: response =>
         Embedding.Query(
           // TODO: assuming that single chunk will product one embedding, but we should validate it
-          value = response.data.head.embedding.toVector.map(_.toFloat), // returned value is usually float32
+          value = response.data.head.embedding.toVector.map(_.toFloat),
           chunk = chunk
         )
 
