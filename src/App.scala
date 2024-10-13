@@ -22,7 +22,7 @@ import sttp.model.Uri.*
 
 import supportbot.rag.*
 import supportbot.chat.*
-import supportbot.clickhouse.ClickHouseClient
+import supportbot.clickhouse.*
 
 // TODO:
 // - vector store integration
@@ -45,6 +45,8 @@ object Main extends ResourceApp.Simple:
       openAIProtocol = OpenAI("ollama", uri"http://localhost:11434/v1")
       chatService = SttpOpenAIChatService(openAIProtocol, model = Model("llama3.1"))
       embeddingService = SttpOpenAIEmbeddingService(openAIProtocol, model = Model("snowflake-arctic-embed"))
+
+      // _ <- doobieClickHouseClient.runQuery.toResource
 
       _ <- program(vectorStore, chatService, embeddingService).toResource
     yield ()

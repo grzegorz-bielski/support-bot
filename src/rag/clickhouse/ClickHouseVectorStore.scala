@@ -76,6 +76,11 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
       .flatMap: value =>
         IO.println(s"Document ${embedding.documentId} exists: $value").as(value)
 
+    //     |LEFT JOIN embeddings AS ae
+  //     |ON ae.document_id = e.document_id
+  //     |AND ae.document_version = e.document_version
+  //     |AND ae.fragment_index IN (e.fragment_index - 1, e.fragment_index, e.fragment_index + 1)
+
   def retrieve(query: Embedding.Query): IO[Vector[Chunk]] =
     client
       .streamQueryJson[ClickHouseRetrievedRow]:
@@ -99,34 +104,6 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
       .compile
       .toVector
 
-  // TODO:
-  //   - join on document_id and fragment_index
-  //     s"""
-  //     |WITH matched_embeddings AS (
-  //     | SELECT(
-  //     |  SELECT
-  //     |   document_id,
-  //     |   document_version,
-  //     |   fragment_index,
-  //     |   base64Decode(value) AS value,
-  //     |   metadata,
-  //     |   cosineDistance(embedding, [${query.value.mkString(", ")}]) AS score
-  //     |  FROM embeddings
-  //     |  ORDER BY score ASC
-  //     |  LIMIT 3
-  //     |  )
-  //     | LIMIT 1 BY document_id, fragment_index -- assuming a single document_version
-  //     |)
-  //     |
-  //     |SELECT *
-  //     |FROM matched_embeddings as e
-  //     |LEFT JOIN embeddings AS ae
-  //     |ON ae.document_id = e.document_id
-  //     |AND ae.document_version = e.document_version
-  //     |AND ae.fragment_index IN (e.fragment_index - 1, e.fragment_index, e.fragment_index + 1)
-  //     |FORMAT JSONEachRow
-  //     |""".stripMargin
-
   def migrate(): IO[Unit] =
     // TODO: temp, move to migration scripts
     Vector(
@@ -144,7 +121,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
         embedding Array(Float32),
         INDEX ann_idx embedding TYPE usearch('cosineDistance')
       )
-      ENGINE = ReplacingMergeTree()
+      ENGINE = MergeTree() -- not replacing, as we want to keep all embeddings for a given fragment_index
       ORDER BY (document_id, document_version, fragment_index)
       """
     ).traverse_(client.executeQuery)
