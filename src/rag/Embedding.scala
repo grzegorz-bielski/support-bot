@@ -7,7 +7,7 @@ enum Embedding:
       value: Vector[Float],
       documentId: String,
       documentVersion: Int,
-      fragmentIndex: Int
+      fragmentIndex: Int,
   )
 
   case Query(

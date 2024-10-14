@@ -1,12 +1,9 @@
 package supportbot
 package rag
+package vectorstore
 
 import cats.syntax.all.*
 import cats.effect.*
-
-trait VectorStore[F[_]]:
-  def store(index: Vector[Embedding.Index]): F[Unit]
-  def retrieve(query: Embedding.Query): F[Vector[Chunk]]
 
 final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends VectorStore[IO]:
   def store(index: Vector[Embedding.Index]): IO[Unit] =
@@ -15,6 +12,9 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
   def retrieve(query: Embedding.Query): IO[Vector[Chunk]] =
     ref.get.flatMap: index =>
       KNN.retrieve(index = index, query = query)
+
+  def documentEmbeddingsExists(documentId: String, documentVersion: Int): IO[Boolean] =
+    ref.get.map(_.exists(index => index.documentId == documentId && index.documentVersion == documentVersion))
 
   private object KNN:
     def retrieve(
@@ -31,7 +31,7 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
           // neighbor lookup window, like +/- 1 page
           fragmentsIndexRange =
             neighbor.fragmentIndex - 1 to neighbor.fragmentIndex + 1
-          // full scan... 
+          // full scan...
           neighboringChunk <- index.collect:
             case embedding: Embedding.Index
                 if neighbor.documentId == embedding.documentId &&
@@ -56,7 +56,7 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
     ): Vector[(T, Double)] =
       data
         .map: (features, label) =>
-          (label, cosineSimilarity(features, input)) // TODO: move to Ordering in custom `compare`
+          (label, cosineSimilarity(features, input))
         .sortBy(-_._2)
         .take(k)
 

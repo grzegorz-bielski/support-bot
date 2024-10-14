@@ -19,8 +19,10 @@ import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import sttp.openai.OpenAI
 import sttp.model.Uri.*
+import java.io.File
 
 import supportbot.rag.*
+import supportbot.rag.vectorstore.*
 import supportbot.chat.*
 import supportbot.clickhouse.*
 
@@ -33,7 +35,7 @@ object Main extends ResourceApp.Simple:
     for
       given SttpBackend <- SttpBackend.resource
 
-      vectorStore = rag.clickhouse.ClickHouseVectorStore.sttpBased(
+      vectorStore = ClickHouseVectorStore.sttpBased(
         ClickHouseClient.Config(
           url = "http://localhost:8123",
           username = "default",
@@ -45,8 +47,6 @@ object Main extends ResourceApp.Simple:
       openAIProtocol = OpenAI("ollama", uri"http://localhost:11434/v1")
       chatService = SttpOpenAIChatService(openAIProtocol, model = Model("llama3.1"))
       embeddingService = SttpOpenAIEmbeddingService(openAIProtocol, model = Model("snowflake-arctic-embed"))
-
-      // _ <- doobieClickHouseClient.runQuery.toResource
 
       _ <- program(vectorStore, chatService, embeddingService).toResource
     yield ()
@@ -72,6 +72,25 @@ object Main extends ResourceApp.Simple:
     ).mkString("\n").some
   )
 
+  def createLocalPdfEmbeddings(file: File, vectorStore: VectorStore[IO], embeddingService: EmbeddingService[IO]) =
+    // TODO: make this user input
+    val documentId = file.getName
+    val documentVersion = 1
+
+    vectorStore
+      .documentEmbeddingsExists(documentId, documentVersion)
+      .ifM(
+        IO.println(s"Embeddings for document $documentId already exists. Skipping the chunking and indexing."),
+        for
+          _ <- IO.println("Chunking PDF")
+          document <- DocumentLoader.loadPDF(file, documentId, documentVersion)
+          _ <- IO.println(s"Creating embeddings. It may take a while...")
+          indexEmbeddings <- embeddingService.createIndexEmbeddings(document)
+          _ <- IO.println(s"Created ${indexEmbeddings.size} embeddings.")
+          _ <- vectorStore.store(indexEmbeddings)
+        yield ()
+      )
+
   def program(
       vectorStore: VectorStore[IO],
       chatService: ChatService[IO],
@@ -79,15 +98,14 @@ object Main extends ResourceApp.Simple:
   ): IO[Unit] =
     for
       // offline - parsing and indexing
-      _ <- IO.println("Chunking PDF")
-      document <- DocumentLoader.loadPDF("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf")
-      _ <- IO.println(s"Creating embeddings. It may take a while...")
-      indexEmbeddings <- embeddingService.createIndexEmbeddings(document)
-      _ <- IO.println(s"Created ${indexEmbeddings.size} embeddings.")
-      _ <- vectorStore.store(indexEmbeddings)
+      _ <- createLocalPdfEmbeddings(
+        file = File("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
+        vectorStore = vectorStore,
+        embeddingService = embeddingService
+      )
 
       // online - chat
-      queryEmbeddings <- embeddingService.createQueryEmbeddings(Chunk(userQuery))
+      queryEmbeddings <- embeddingService.createQueryEmbeddings(Chunk(userQuery, index = 0))
       contextChunk <- vectorStore.retrieve(queryEmbeddings)
       _ <- IO.println(s"Retrieved context: ${contextChunk.map(_.toEmbeddingInput)}")
 

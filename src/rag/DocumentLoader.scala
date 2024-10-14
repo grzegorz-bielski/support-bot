@@ -8,33 +8,42 @@ import java.io.*
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.Loader
 import smile.nlp.*
-import org.apache.pdfbox.text.PDFTextStripper
+import org.apache.pdfbox.text.*
 
 object DocumentLoader:
-  def loadPDF(path: String): IO[Document] =
-    IO.blocking(fromPDFUnsafe(path))
+  def loadPDF(file: File, documentId: String, documentVersion: Int): IO[Document] =
+    IO.blocking(fromPDFUnsafe(file, documentId, documentVersion))
 
-  private def fromPDFUnsafe(path: String): Document =
-    val file = File(path)
-    val fileName = file.getName
-    val document = Loader.loadPDF(File(path))
+  private def fromPDFUnsafe(file: File, documentId: String, documentVersion: Int): Document =
+    val document = Loader.loadPDF(file)
 
     // 1 based index
     val allFragments = (1 to document.getNumberOfPages)
-      .foldLeft(Vector.newBuilder[DocumentFragment]): (builder, i) =>
+      .foldLeft(Vector.newBuilder[DocumentFragment]): (builder, pageNr) =>
+        // this has a couple of issues:
+        // 1. it doesn't handle text that spans multiple pages
+        // 2. it repeats the document title on every page
         val textStripper = new PDFTextStripper()
-        textStripper.setStartPage(i)
-        textStripper.setEndPage(i)
+        textStripper.setStartPage(pageNr)
+        textStripper.setEndPage(pageNr)
 
-        val metadata = Map("page" -> i.toString, "file" -> fileName)
+        val metadata = Map.empty[String, String]
 
         builder.addAll:
           textStripper
             .getText(document)
             .sentences
             .toVector
-            .map: value =>
-              DocumentFragment(index = i, Chunk(value, metadata))
+            .mapWithIndex: (sentence, sentenceNr) =>
+              DocumentFragment(
+                index = pageNr,
+                chunk = Chunk(
+                  text = sentence,
+                  index = sentenceNr,
+                  metadata = metadata
+                )
+              )
       .result()
 
-    Document(id = fileName, version = 1, fragments = allFragments)
+    Document(id = documentId, version = documentVersion, fragments = allFragments)
+
