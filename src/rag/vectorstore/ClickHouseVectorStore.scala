@@ -8,17 +8,20 @@ import fs2.{Chunk as _, *}
 import supportbot.clickhouse.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.*
+import org.typelevel.log4cats.*
+import org.typelevel.log4cats.slf4j.*
+import org.typelevel.log4cats.syntax.*
 import unindent.*
 import java.util.Base64
 
-final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorStore[IO]:
+final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]) extends VectorStore[IO]:
   import ClickHouseVectorStore.*
 
   def store(index: Vector[Embedding.Index]): IO[Unit] =
     index.headOption
       .traverse: embedding =>
         documentEmbeddingsExists(embedding.documentId, embedding.documentVersion).ifM(
-          IO.println(s"Embeddings for document ${embedding.documentId} already exists. Skipping the insertion."),
+          info"Embeddings for document ${embedding.documentId} already exists. Skipping the insertion.",
           storeEmbeddings(index)
         )
       .void
@@ -41,9 +44,8 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
       ${values}
       """
 
-    client
-      .executeQuery(insertQuery)
-      .productR(IO.println(s"Stored ${embeddings.size} embeddings."))
+    client.executeQuery(insertQuery) *>
+      info"Stored ${embeddings.size} embeddings."
 
   def documentEmbeddingsExists(documentId: String, documentVersion: Int): IO[Boolean] =
     client
@@ -65,7 +67,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
       .map(_.trim.toInt)
       .map(_ == 1)
       .flatMap: value =>
-        IO.println(s"Document $documentId exists: $value").as(value)
+        info"Document $documentId exists: $value".as(value)
 
   def retrieve(embedding: Embedding.Query): Stream[IO, Embedding.Retrieved] =
     client
@@ -146,8 +148,9 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
     String(encodedBytes, charset)
 
 object ClickHouseVectorStore:
-  def sttpBased(config: ClickHouseClient.Config)(using SttpBackend): ClickHouseVectorStore =
-    ClickHouseVectorStore(SttpClickHouseClient(config))
+  def sttpBased(config: ClickHouseClient.Config)(using SttpBackend): IO[ClickHouseVectorStore] =
+    for given Logger[IO] <- Slf4jLogger.create[IO]
+    yield ClickHouseVectorStore(SttpClickHouseClient(config))
 
   private final case class ClickHouseRetrievedRow(
       document_id: String,
