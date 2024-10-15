@@ -4,6 +4,7 @@ package vectorstore
 
 import cats.effect.*
 import cats.syntax.all.*
+import fs2.{Chunk as _, *}
 import supportbot.clickhouse.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.*
@@ -22,8 +23,8 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
         )
       .void
 
-  private def storeEmbeddings(index: Vector[Embedding.Index]): IO[Unit] =
-    val values = index
+  private def storeEmbeddings(embeddings: Vector[Embedding.Index]): IO[Unit] =
+    val values = embeddings
       .map: embedding =>
         import embedding.*
 
@@ -42,7 +43,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
 
     client
       .executeQuery(insertQuery)
-      .productR(IO.println(s"Stored ${index.size} embeddings."))
+      .productR(IO.println(s"Stored ${embeddings.size} embeddings."))
 
   def documentEmbeddingsExists(documentId: String, documentVersion: Int): IO[Boolean] =
     client
@@ -66,23 +67,19 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
       .flatMap: value =>
         IO.println(s"Document $documentId exists: $value").as(value)
 
-  def retrieve(query: Embedding.Query): IO[Vector[Chunk]] =
+  def retrieve(embedding: Embedding.Query): Stream[IO, Embedding.Retrieved] =
     client
       .streamQueryJson[ClickHouseRetrievedRow]:
-        // TODO: neighbor fragment lookup window
         i"""
           WITH matched_embeddings AS (
             SELECT * FROM (
               SELECT 
-              document_id,
-              document_version, 
-              fragment_index,
-              value,
-              metadata,
-              cosineDistance(
-                  embedding, 
-                  arrayWithConstant(1024, -1.2)
-              ) AS score
+                document_id,
+                document_version, 
+                fragment_index,
+                value,
+                metadata,
+                cosineDistance(embedding, [${embedding.value.mkString(", ")}]) AS score 
               FROM embeddings
               ORDER BY score ASC
               LIMIT 3
@@ -101,13 +98,22 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO]) extends VectorSt
           INNER JOIN embeddings AS ae
           ON ae.document_id = e.document_id
           AND ae.document_version = e.document_version
-          AND ae.fragment_index = e.fragment_index
-          ORDER BY ae.document_id, ae.document_version, ae.fragment_index, ae.chunk_index
+          AND
+              ae.fragment_index = e.fragment_index OR
+              ae.fragment_index = e.fragment_index - 1 OR
+              ae.fragment_index = e.fragment_index + 1
+          ORDER BY document_id, document_version, fragment_index, chunk_index
           FORMAT JSONEachRow
         """
-      .map(row => Chunk(text = row.value, index = row.chunk_index, metadata = row.metadata))
-      .compile
-      .toVector
+      .map: row =>
+        Embedding.Retrieved(
+          chunk = Chunk(text = row.value, index = row.chunk_index, metadata = row.metadata),
+          value = embedding.value,
+          documentId = row.document_id,
+          documentVersion = row.document_version,
+          fragmentIndex = row.fragment_index,
+          score = row.score
+        )
 
   def migrate(): IO[Unit] =
     // TODO: temp, move to migration scripts

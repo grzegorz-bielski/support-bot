@@ -4,14 +4,14 @@ package vectorstore
 
 import cats.syntax.all.*
 import cats.effect.*
+import fs2.*
 
 final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends VectorStore[IO]:
   def store(index: Vector[Embedding.Index]): IO[Unit] =
     ref.update(_ ++ index).void
 
-  def retrieve(query: Embedding.Query): IO[Vector[Chunk]] =
-    ref.get.flatMap: index =>
-      KNN.retrieve(index = index, query = query)
+  def retrieve(query: Embedding.Query): Stream[IO, Embedding.Retrieved] =
+    Stream.eval(ref.get).flatMap(KNN.retrieve(_, query))
 
   def documentEmbeddingsExists(documentId: String, documentVersion: Int): IO[Boolean] =
     ref.get.map(_.exists(index => index.documentId == documentId && index.documentVersion == documentVersion))
@@ -20,10 +20,10 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
     def retrieve(
         index: Vector[Embedding.Index], // assuming this comes from all the documents
         query: Embedding.Query // to be classified
-    ): IO[Vector[Chunk]] =
-      IO.pure:
+    ): Stream[IO, Embedding.Retrieved] =
+      Stream.emits:
         for
-          (neighbor, _) <- findKNearestNeighbors(
+          (neighbor, score) <- findKNearestNeighbors(
             data = index.map(embedding => (embedding.value.map(_.toDouble), embedding)),
             input = query.value.map(_.toDouble),
             k = 3
@@ -36,7 +36,14 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
             case embedding: Embedding.Index
                 if neighbor.documentId == embedding.documentId &&
                   fragmentsIndexRange.contains(embedding.fragmentIndex) =>
-              embedding.chunk
+              Embedding.Retrieved(
+                chunk = embedding.chunk,
+                value = embedding.value,
+                documentId = embedding.documentId,
+                documentVersion = embedding.documentVersion,
+                fragmentIndex = embedding.fragmentIndex,
+                score = score // score for the main chunk, not the neighboring chunk
+              )
         yield neighboringChunk
 
     private def cosineSimilarity(vec1: Vector[Double], vec2: Vector[Double]): Double =

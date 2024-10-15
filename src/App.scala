@@ -26,10 +26,6 @@ import supportbot.rag.vectorstore.*
 import supportbot.chat.*
 import supportbot.clickhouse.*
 
-// TODO:
-// - vector store integration
-// - UI
-
 object Main extends ResourceApp.Simple:
   def run =
     for
@@ -51,7 +47,7 @@ object Main extends ResourceApp.Simple:
       _ <- program(vectorStore, chatService, embeddingService).toResource
     yield ()
 
-  val userQuery = "How do I solve manual resolution with unresolved_games reason?"
+  val userQuery = "What's the daily monitoring routine for the SAFE3 system?"
 
   def appPrompt(query: String, context: Option[String]) = Prompt(
     taskContext = "You are an expert Q&A system that is trusted around the world.".some,
@@ -106,14 +102,15 @@ object Main extends ResourceApp.Simple:
 
       // online - chat
       queryEmbeddings <- embeddingService.createQueryEmbeddings(Chunk(userQuery, index = 0))
-      contextChunk <- vectorStore.retrieve(queryEmbeddings)
-      _ <- IO.println(s"Retrieved context: ${contextChunk.map(_.toEmbeddingInput)}")
+      retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings).compile.toVector
+      contextChunks = retrievedEmbeddings.map(_.chunk)
+      _ <- IO.println(s"Retrieved context: ${contextChunks.map(_.toEmbeddingInput)}")
 
       - <- IO.println("Asking for chat completion")
       res <- chatService.runChatCompletion(
         appPrompt(
           query = userQuery,
-          context = contextChunk.map(_.toEmbeddingInput).mkString("\n").some
+          context = contextChunks.map(_.toEmbeddingInput).mkString("\n").some
         )
       )
     yield ()
