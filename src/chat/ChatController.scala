@@ -11,12 +11,14 @@ import scalatags.Text.all.*
 import org.typelevel.log4cats.*
 import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
-// import scala.concurrent.duration.*
+import scala.concurrent.duration.{span as _, *}
 
 import rag.vectorstore.*
 import rag.*
+import java.util.UUID
+import org.http4s.dsl.impl.QueryParamDecoderMatcher
 
-// TODO: 
+// TODO:
 // - chat breaks after first message
 // - append user queries to the chat
 
@@ -28,11 +30,14 @@ final class ChatController(
   vectorStore: VectorStore[IO],
   embeddingService: EmbeddingService[IO],
 ) extends HtmxController:
+  import ChatController.*
+
   protected val prefix = "chat"
 
-  private val chatId = "chat-1" // TODO: get from session
-
-  private val userQuery = "What's the daily monitoring routine for the SAFE3 system?"
+  // TODO:
+  // - create new chat and persist it's id
+  // - chat history
+  private val chatId = UUID.fromString("f47ac10b-58cc-4372-a567-0e02b2c3d479")
 
   private def appPrompt(query: String, context: Option[String]) = Prompt(
     taskContext = "You are an expert Q&A system that is trusted around the world.".some,
@@ -53,38 +58,42 @@ final class ChatController(
     ).mkString("\n").some,
   )
 
-  private def processQuery(query: ChatQuery): IO[Unit] =
+  private def processQuery(query: ChatQuery, queryId: UUID, chatId: UUID): IO[Unit] =
     for
-      queryEmbeddings     <- embeddingService.createQueryEmbeddings(Chunk(userQuery, index = 0))
+      queryEmbeddings     <- embeddingService.createQueryEmbeddings(Chunk(query.content, index = 0))
       retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings).compile.toVector
       contextChunks        = retrievedEmbeddings.map(_.chunk)
-      _                   <- info"Retrieved context: ${contextChunks.map(_.toEmbeddingInput)}"
+      _                   <- debug"Retrieved context: ${contextChunks.map(_.toEmbeddingInput)}"
 
       finalPrompt = appPrompt(
                       query = query.content,
                       context = contextChunks.map(_.toEmbeddingInput).mkString("\n").some,
                     )
 
+      topicId = queryId.toString
+
       _ <- chatService
              .chatCompletion(finalPrompt)
              .map: chatMsg =>
                PubSub.Message(
-                 topicId = chatId,
-                 eventType = "chat-response",
+                 topicId = topicId,
+                 eventType = ChatView.queryResponseEvent,
                  content = chatMsg.contentDeltas,
                )
              .onComplete:
                Stream(
                  PubSub.Message(
-                   topicId = chatId,
-                   eventType = "sse-close",
+                   topicId = topicId,
+                   eventType = ChatView.queryCloseEvent,
                    content = "Stream completed",
                  ),
                )
-             .through(pubSub.publishPipe)
+             .evalTap: chatMsg =>
+               debug"Received chat message: $chatMsg"
+             .evalTap(pubSub.publish)
              .compile
              .drain
-      _ <- info"Processing the response for $chatId has been completed"
+      _ <- info"Processing the response for queryId: $queryId has been completed"
     yield ()
 
   protected val routes = IO:
@@ -99,39 +108,53 @@ final class ChatController(
           ),
         )
 
-      case GET -> Root / "responses" =>
+      case GET -> Root / "responses" :? ChatIdMatcher(chatId) :? QueryIdMatcher(queryId) =>
+        val topicId                      = queryId.toString
         val eventStream: EventStream[IO] =
           pubSub
-            .subscribe(chatId)
+            .subscribe(topicId)
             .map: message =>
               ServerSentEvent(
                 data = message.content.some,
                 eventType = message.eventType.some,
               )
+            .evalTap: msg =>
+              debug"SSE message to send: $msg"
+            .timeout(5.minutes)
 
         for
-          _   <- info"Subscribing to chat responses for $chatId"
+          _   <- info"Subscribing to chat responses for queryId: $queryId"
           res <- Ok(eventStream)
         yield res
 
       case req @ POST -> Root / "query" =>
         for
-          query <- req.as[ChatQuery]
-          _     <- info"Received query: $query"
-          _     <- processQuery(query).start // TODO: use .background / Resource and maybe queue requests
-          res   <-
-            Ok(ChatView.responseMessage()) 
+          query   <- req.as[ChatQuery]
+          queryId <- IO.randomUUID
+          _       <- info"Received query: $query"
+          _       <- processQuery(query, queryId, chatId).start // TODO: use .background / Resource and maybe queue requests
+          res     <-
+            Ok(ChatView.responseMessage(query, queryId, chatId))
         yield res
 
 object ChatController:
-  def of()(using ChatService[IO], VectorStore[IO], EmbeddingService[IO]): IO[ChatController] =
+  def of()(using ChatService[IO], VectorStore[IO], EmbeddingService[IO]): Resource[IO, ChatController] =
     for
-      given Logger[IO] <- Slf4jLogger.create[IO]
-      pubSub           <- PubSub.of[IO]
+      given Logger[IO] <- Slf4jLogger.create[IO].toResource
+      pubSub           <- PubSub.resource[IO]
     yield ChatController(pubSub)
+
+  given QueryParamDecoder[UUID] = QueryParamDecoder[String].emap: str =>
+    ParseResult.fromTryCatchNonFatal("Could not parse the UUID")(UUID.fromString(str))
+
+  object ChatIdMatcher  extends QueryParamDecoderMatcher[UUID]("chatId")
+  object QueryIdMatcher extends QueryParamDecoderMatcher[UUID]("queryId")
 
 object ChatView extends HtmxView:
   val messagesId = "chat-messages"
+
+  val queryResponseEvent = "query-response"
+  val queryCloseEvent    = "query-close"
 
   def chatForm() =
     form(
@@ -149,17 +172,26 @@ object ChatView extends HtmxView:
       ),
     )
 
-  def responseMessage(initialContent: Option[String] = None) =
+  def responseMessage(
+    query: ChatQuery,
+    queryId: UUID,
+    chatId: UUID,
+  ) =
     div(
-      cls := "chat chat-start",
       div(
-        cls           := "chat-bubble chat-bubble-primary",
-        `hx-ext`      := "sse",
-        `sse-connect` := "/chat/responses",
-        `sse-swap`    := "chat-response",
-        `hx-swap`     := "beforeend scroll:bottom",
-      )(
-        initialContent.getOrElse(""),
+        cls := "chat chat-end",
+        div(cls := "chat-bubble chat-bubble-secondary", query.content),
+      ),
+      div(
+        cls := "chat chat-start",
+        div(
+          cls           := "chat-bubble chat-bubble-primary",
+          `hx-ext`      := "sse",
+          `sse-connect` := s"/chat/responses?chatId=$chatId&queryId=$queryId",
+          `sse-swap`    := queryResponseEvent,
+          `sse-close`   := queryCloseEvent,
+          `hx-swap`     := "beforeend scroll:bottom",
+        )(),
       ),
     )
 
@@ -168,35 +200,8 @@ object ChatView extends HtmxView:
       id := messagesId,
     )(
       div(
-        cls   := "chat chat-start",
-        div(cls := "chat-bubble chat-bubble-primary", "What kind of nonsense is this"),
-      ),
-      div(
-        cls   := "chat chat-start",
-        div(
-          cls := "chat-bubble chat-bubble-secondary",
-          "Put me on the Council and not make me a Master!??",
-        ),
-      ),
-      div(
-        cls   := "chat chat-start",
-        div(
-          cls := "chat-bubble chat-bubble-accent",
-          "That's never been done in the history of the Jedi. It's insulting!",
-        ),
-      ),
-      div(cls := "chat chat-end", div(cls := "chat-bubble chat-bubble-info", "Calm down, Anakin.")),
-      div(
-        cls   := "chat chat-end",
-        div(cls := "chat-bubble chat-bubble-success", "You have been given a great honor."),
-      ),
-      div(
-        cls   := "chat chat-end",
-        div(cls := "chat-bubble chat-bubble-warning", "To be on the Council at your age."),
-      ),
-      div(
-        cls   := "chat chat-end",
-        div(cls := "chat-bubble chat-bubble-error", "It's never happened before."),
+        cls := "chat chat-start",
+        div(cls := "chat-bubble chat-bubble-primary", "Hello, how can I help you?"),
       ),
     )
 
@@ -208,18 +213,17 @@ object ChatQuery:
 
 trait PubSub[F[_]]:
   def publish(message: PubSub.Message): F[Unit]
-  def publishPipe: Pipe[F, PubSub.Message, Unit]
   def subscribe(topicId: String): Stream[F, PubSub.Message]
 
 object PubSub:
   final case class Message(topicId: String, eventType: String, content: String)
 
-  def of[F[_]: Concurrent]: F[PubSub[F]] =
-    Topic[F, Message]().map: topic =>
-      new PubSub[F]:
-        def publish(message: Message): F[Unit]        =
-          topic.publish1(message).void
-        def publishPipe: Pipe[F, Message, Unit]       =
-          topic.publish
-        def subscribe(id: String): Stream[F, Message] =
-          topic.subscribeUnbounded.filter(_.topicId == id)
+  def resource[F[_]: Concurrent]: Resource[F, PubSub[F]] =
+    Resource
+      .make(Topic[F, Message]())(_.close.void)
+      .map: topic =>
+        new PubSub[F]:
+          def publish(message: Message): F[Unit]        =
+            topic.publish1(message).void
+          def subscribe(id: String): Stream[F, Message] =
+            topic.subscribeUnbounded.filter(_.topicId == id)

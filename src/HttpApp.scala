@@ -19,14 +19,13 @@ import org.typelevel.log4cats.syntax.*
 
 def httpApp(
   host: Host = ipv4"0.0.0.0",
-  port: Port = port"8080",
-  routes: IO[Controller]*,
+  port: Port = port"8081",
+  controllers: Controller*,
 ): Resource[IO, Server] =
   val app = for
     given Logger[IO] <- Slf4jLogger.create[IO]
     _                <- info"Starting the server at $host:$port"
-    routes           <- routes.sequence
-    mappings         <- routes
+    mappings         <- controllers
                           .appended(StaticAssetsController())
                           .appended(RootLayoutController)
                           .traverse(_.mapping)

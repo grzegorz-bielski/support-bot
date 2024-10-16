@@ -13,7 +13,10 @@
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.30.15
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.30.15
 //> using dep org.typelevel::log4cats-slf4j:2.7.0
-//> using dep ch.qos.logback:logback-classic:1.5.11
+//> using dep com.outr::scribe-slf4j2:3.15.0
+//> using dep com.outr::scribe-file:3.15.0
+
+///> using dep ch.qos.logback:logback-classic:1.5.11
 
 package supportbot
 
@@ -31,9 +34,10 @@ import supportbot.rag.vectorstore.*
 import supportbot.chat.*
 import supportbot.clickhouse.*
 
-object Main extends ResourceApp.Forever:
+object SupportBot extends ResourceApp.Forever:
   def run(args: List[String]): Resource[IO, Unit] =
     for
+      _                         <- AppLogger.configure.toResource
       given SttpBackend         <- SttpBackend.resource
       clickHouseVectorStore     <- ClickHouseVectorStore
                                      .sttpBased(
@@ -50,12 +54,15 @@ object Main extends ResourceApp.Forever:
       given ChatService[IO]      = SttpOpenAIChatService(openAIProtocol, model = Model("llama3.1"))
       given EmbeddingService[IO] = SttpOpenAIEmbeddingService(openAIProtocol, model = Model("snowflake-arctic-embed"))
 
+      // TODO: move it to ingestion service
       // offline - parsing and indexing
       _ <- createLocalPdfEmbeddings(
              File("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
            ).toResource
 
-      _ <- httpApp(routes = ChatController.of())
+      chatController <- ChatController.of()
+
+      _ <- httpApp(controllers = chatController)
     yield ()
 
   // TODO: move to some ingestion service
