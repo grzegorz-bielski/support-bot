@@ -4,8 +4,8 @@
 //> using dep org.http4s::http4s-dsl::0.23.28
 //> using dep org.http4s::http4s-ember-server::0.23.28
 //> using dep org.http4s::http4s-scalatags::0.25.2
-//> using dep com.softwaremill.sttp.openai::fs2:0.2.3
-//> using dep com.softwaremill.sttp.openai::core:0.2.3
+//> using dep com.softwaremill.sttp.openai::fs2:0.2.4
+//> using dep com.softwaremill.sttp.openai::core:0.2.4
 //> using dep com.softwaremill.sttp.client4::cats:4.0.0-M17
 //> using dep com.github.haifengl::smile-scala:3.1.1
 //> using dep org.apache.pdfbox:pdfbox:3.0.3
@@ -13,6 +13,7 @@
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.30.15
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.30.15
 //> using dep org.typelevel::log4cats-slf4j:2.7.0
+//> using dep ch.qos.logback:logback-classic:1.5.11
 
 package supportbot
 

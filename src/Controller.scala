@@ -26,6 +26,9 @@ trait HtmxView:
   lazy val `hx-on:click`: HtmxAttr = attr("hx-on:click")
   lazy val `hx-delete`: HtmxAttr   = attr("hx-delete")
   lazy val `hx-boost`: HtmxAttr    = attr("hx-boost")
+  lazy val `hx-ext`: HtmxAttr      = attr("hx-ext")
+  lazy val `sse-connect`: HtmxAttr = attr("sse-connect")
+  lazy val `sse-swap`: HtmxAttr    = attr("sse-swap")
 
   def appLink(path: String, text: String): TypedTag[String] =
     a(
