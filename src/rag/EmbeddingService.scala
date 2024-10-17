@@ -64,5 +64,5 @@ final class SttpOpenAIEmbeddingService(model: Model)(using backend: SttpBackend,
   extension (underlying: EmbeddingData)
     def embeddingValues: Vector[Float] =
       // assuming the model returns embedding vectors in float32
-      // this is usually is true, but it's model-specific
+      // this is usually true, but it's model-specific
       underlying.embedding.toVector.map(_.toFloat)

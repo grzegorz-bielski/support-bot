@@ -30,6 +30,7 @@ import java.io.File
 import supportbot.rag.*
 import supportbot.rag.vectorstore.*
 import supportbot.chat.*
+import supportbot.home.*
 import supportbot.clickhouse.*
 
 object SupportBot extends ResourceApp.Forever:
@@ -57,7 +58,6 @@ object SupportBot extends ResourceApp.Forever:
                                      model = Model("snowflake-arctic-embed"),
                                    )
 
-      // TODO: move it to ingestion service
       // offline - parsing and indexing
       _                         <- createLocalPdfEmbeddings(
                                      File("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
@@ -65,7 +65,13 @@ object SupportBot extends ResourceApp.Forever:
 
       chatController <- ChatController.of()
 
-      _ <- httpApp(controllers = chatController)
+      _ <- httpApp(
+        controllers = 
+          Vector(
+            chatController, 
+            HomeController
+          ),
+        )
     yield ()
 
   // TODO: move to some ingestion service
