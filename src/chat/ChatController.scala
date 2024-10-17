@@ -5,7 +5,7 @@ import fs2.{Chunk as _, *}
 import fs2.concurrent.Topic
 import cats.effect.*
 import cats.syntax.all.*
-import org.http4s.{scalatags as _, *}
+import org.http4s.{scalatags as _, h2 as _, *}
 import org.http4s.FormDataDecoder.*
 import scalatags.Text.all.*
 import org.typelevel.log4cats.*
@@ -99,14 +99,7 @@ final class ChatController(
   protected val routes = IO:
     HttpRoutes.of[IO]:
       case GET -> Root =>
-        Ok(
-          RootLayoutView.view(
-            div(
-              ChatView.messages(),
-              ChatView.chatForm(),
-            ),
-          ),
-        )
+        Ok(ChatView.view())
 
       case GET -> Root / "responses" :? ChatIdMatcher(chatId) :? QueryIdMatcher(queryId) =>
         val topicId                      = queryId.toString
@@ -156,6 +149,66 @@ object ChatView extends HtmxView:
 
   val queryResponseEvent = "query-response"
   val queryCloseEvent    = "query-close"
+
+  def view() = RootLayoutView.view(
+    div(
+      ChatView.configMenu(),
+      ChatView.messages(),
+      ChatView.chatForm(),
+    ),
+  )
+
+  def configMenu() =
+    // TODO: get documents from the database
+    val documents = Vector(
+      "SAFE3 - Support Guide-v108-20240809_102738.pdf",
+    )
+
+    div(
+      cls := "py-4",
+      div(
+        tabindex := "0",
+        cls      := "collapse collapse-open border-base-300 bg-base-200 border",
+        div(cls := "collapse-title text-xl font-medium", "Knowledge Base"),
+        div(
+          cls   := "collapse-content",
+          div(
+            h3("Files"),
+            ul(
+              cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s",
+              documents.map: document =>
+                li(
+                  a(
+                    documentIcon(),
+                    document,
+                  ),
+                ),
+            ),
+            form(
+              input(`type` := "file", cls := "file-input file-input-sm w-full max-w-xs")
+            )
+          ),
+        ),
+      ),
+    )
+
+  def documentIcon() =
+    import scalatags.Text.svgTags.{attr as _, *}
+    import scalatags.Text.svgAttrs.*
+
+    svg(
+      xmlns                := "http://www.w3.org/2000/svg",
+      fill                 := "none",
+      viewBox              := "0 0 24 24",
+      attr("stroke-width") := "1.5",
+      stroke               := "currentColor",
+      cls                  := "h-4 w-4",
+      path(
+        attr("stroke-linecap")  := "round",
+        attr("stroke-linejoin") := "round",
+        d                       := "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z",
+      ),
+    )
 
   def chatForm() =
     form(
