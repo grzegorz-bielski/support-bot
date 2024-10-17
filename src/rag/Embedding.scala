@@ -2,27 +2,30 @@ package supportbot
 package rag
 
 object Embedding:
-  // embedding to be stored and indexed in the vector store
+  /** Embedding to be stored and indexed in the vector store
+    */
   final case class Index(
-      chunk: Chunk,
-      value: Vector[Float],
-      documentId: String,
-      documentVersion: Int,
-      fragmentIndex: Int
+    chunk: Chunk,
+    value: Vector[Float],
+    documentId: String,
+    documentVersion: Int,
+    fragmentIndex: Int,
   )
 
-  // embedding retrieved from the vector store
+  /** Embedding retrieved from the vector store
+    */
   final case class Retrieved(
-      chunk: Chunk,
-      value: Vector[Float],
-      documentId: String,
-      documentVersion: Int,
-      fragmentIndex: Int,
-      score: Double
+    chunk: Chunk,
+    value: Vector[Float],
+    documentId: String,
+    documentVersion: Int,
+    fragmentIndex: Int,
+    score: Double,
   )
 
-  // embedding from the user query
+  /** Embedding from the user query
+    */
   final case class Query(
-      chunk: Chunk,
-      value: Vector[Float]
+    chunk: Chunk,
+    value: Vector[Float],
   )

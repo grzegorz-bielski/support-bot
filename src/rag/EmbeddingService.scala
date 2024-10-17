@@ -20,34 +20,33 @@ trait EmbeddingService[F[_]]:
 
 final class SttpOpenAIEmbeddingService(openAIProtocol: OpenAI, model: Model)(using backend: SttpBackend)
     extends EmbeddingService[IO]:
-  // assuming the model returns vectors in float32, which usually is true
   val embeddingModel = EmbeddingsModel.CustomEmbeddingsModel(model)
 
   def createIndexEmbeddings(document: Document): IO[Vector[Embedding.Index]] =
     createEmbeddings(
       EmbeddingsInput.MultipleInput(
-        document.fragments.map(_.chunk.toEmbeddingInput)
-      )
+        document.fragments.map(_.chunk.toEmbeddingInput),
+      ),
     )
       .map: embeddingResponse =>
         document.fragments
           .zip(embeddingResponse.data)
-          .map: (fragment, value) =>
+          .map: (fragment, embeddingData) =>
             Embedding.Index(
               chunk = fragment.chunk,
-              value = value.embedding.toVector.map(_.toFloat),
+              value = embeddingData.embeddingValues,
               documentId = document.id,
               documentVersion = document.version,
-              fragmentIndex = fragment.index
+              fragmentIndex = fragment.index,
             )
 
   def createQueryEmbeddings(chunk: Chunk): IO[Embedding.Query] =
     createEmbeddings(EmbeddingsInput.SingleInput(chunk.toEmbeddingInput))
       .map: response =>
         Embedding.Query(
-          // TODO: assuming that single chunk will product one embedding, but we should validate it
-          value = response.data.head.embedding.toVector.map(_.toFloat),
-          chunk = chunk
+          // TODO: assuming that single chunk will product one embedding for `SingleInput`, but we should validate it
+          value = response.data.head.embeddingValues,
+          chunk = chunk,
         )
 
   private def createEmbeddings(input: EmbeddingsInput) =
@@ -55,9 +54,15 @@ final class SttpOpenAIEmbeddingService(openAIProtocol: OpenAI, model: Model)(usi
       .createEmbeddings(
         EmbeddingsBody(
           model = embeddingModel,
-          input = input
-        )
+          input = input,
+        ),
       )
       .send(backend)
       .map(_.body)
       .rethrow
+
+  extension (underlying: EmbeddingData)
+    def embeddingValues: Vector[Float] =
+      // assuming the model returns embedding vectors in float32
+      // this is usually is true, but it's model-specific
+      underlying.embedding.toVector.map(_.toFloat)

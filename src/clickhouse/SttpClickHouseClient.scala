@@ -73,8 +73,6 @@ final class SttpClickHouseClient(config: ClickHouseClient.Config)(using backend:
         uri"${config.url}"
           .addParam("output_format_json_quote_64bit_integers", "0")
           .addParam("allow_experimental_usearch_index", "1")
-          // reduce network traffic when transmitting a large amount of data:
-          // https://clickhouse.com/docs/en/operations/settings/settings#enable_http_compression
           .addParam("enable_http_compression", "1")
       )
       .auth

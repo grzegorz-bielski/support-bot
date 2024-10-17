@@ -10,5 +10,7 @@ metals.sbt
 .bsp/
 .env
 .DS_Store
-resources
+node_modules
 
+content
+resources/static/generated.css
