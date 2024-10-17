@@ -30,6 +30,7 @@ import java.io.File
 import supportbot.rag.*
 import supportbot.rag.vectorstore.*
 import supportbot.chat.*
+import supportbot.home.*
 import supportbot.clickhouse.*
 
 object SupportBot extends ResourceApp.Forever:
@@ -48,19 +49,29 @@ object SupportBot extends ResourceApp.Forever:
                                      .toResource
       given VectorStore[IO]      = clickHouseVectorStore
       _                         <- clickHouseVectorStore.migrate().toResource
-      openAIProtocol             = OpenAI("ollama", uri"http://localhost:11434/v1")
-      given ChatService[IO]      = SttpOpenAIChatService(openAIProtocol, model = Model("llama3.1"))
-      given EmbeddingService[IO] = SttpOpenAIEmbeddingService(openAIProtocol, model = Model("snowflake-arctic-embed"))
+      given OpenAI               = OpenAI("ollama", uri"http://localhost:11434/v1")
+      given ChatService[IO]      = SttpOpenAIChatService(
+                                     model = Model("llama3.1")
+                                    //  model = Model("llama3.1:8b-instruct-q4_0"),
+                                   )
+      given EmbeddingService[IO] = SttpOpenAIEmbeddingService(
+                                     model = Model("snowflake-arctic-embed"),
+                                   )
 
-      // TODO: move it to ingestion service
       // offline - parsing and indexing
-      _ <- createLocalPdfEmbeddings(
-             File("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
-           ).toResource
+      _                         <- createLocalPdfEmbeddings(
+                                     File("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
+                                   ).toResource
 
       chatController <- ChatController.of()
 
-      _ <- httpApp(controllers = chatController)
+      _ <- httpApp(
+        controllers = 
+          Vector(
+            chatController, 
+            HomeController
+          ),
+        )
     yield ()
 
   // TODO: move to some ingestion service

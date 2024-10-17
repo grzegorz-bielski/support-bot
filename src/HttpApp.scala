@@ -20,14 +20,13 @@ import org.typelevel.log4cats.syntax.*
 def httpApp(
   host: Host = ipv4"0.0.0.0",
   port: Port = port"8080",
-  controllers: Controller*,
+  controllers: Vector[Controller],
 ): Resource[IO, Server] =
   val app = for
     given Logger[IO] <- Slf4jLogger.create[IO]
     _                <- info"Starting the server at $host:$port"
     mappings         <- controllers
                           .appended(StaticAssetsController())
-                          .appended(RootLayoutController)
                           .traverse(_.mapping)
   yield Router(mappings*).orNotFound
 
@@ -38,17 +37,6 @@ def httpApp(
       .withPort(port)
       .withHttpApp(_)
       .build
-
-object RootLayoutController extends HtmxController:
-  def prefix = "/"
-  def routes = IO:
-    HttpRoutes.of[IO]:
-      case GET -> Root =>
-        Ok(
-          RootLayoutView.view(
-            div("nothing here"),
-          ),
-        )
 
 final class StaticAssetsController(using Logger[IO]) extends Controller:
   def prefix = "static"

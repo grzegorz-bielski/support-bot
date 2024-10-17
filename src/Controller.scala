@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import org.http4s.dsl.*
 import org.http4s.{scalatags as _, *}
 import org.http4s.scalatags.ScalatagsInstances
+import scalatags.Text.Modifier
 import scalatags.Text.all.*
 import scalatags.Text.TypedTag
 
@@ -31,8 +32,10 @@ trait HtmxView:
   lazy val `sse-swap`: HtmxAttr    = attr("sse-swap")
   lazy val `sse-close`: HtmxAttr   = attr("sse-close")
 
-  def appLink(path: String, text: String): TypedTag[String] =
-    a(
+  def appLink(path: String, text: String, attrs: Modifier*): TypedTag[String] =
+    val allAttrs = Seq(
       attr("href") := path,
       `hx-boost`   := "true",
-    )(text)
+    ) ++ attrs
+
+    a(allAttrs*)(text)

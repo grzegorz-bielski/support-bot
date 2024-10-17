@@ -13,8 +13,9 @@ import sttp.openai.OpenAIExceptions.OpenAIException
 import sttp.openai.requests.completions.chat.ChatRequestBody.{ChatBody, ChatCompletionModel}
 import sttp.openai.requests.completions.chat.message.*
 
-final class SttpOpenAIChatService(openAIProtocol: OpenAI, model: Model)(using
+final class SttpOpenAIChatService(model: Model)(using
   backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
+  openAIProtocol: OpenAI,
 ) extends ChatService[IO]:
   import SttpOpenAIChatService.*
 
