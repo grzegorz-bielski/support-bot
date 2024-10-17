@@ -18,10 +18,6 @@ import rag.*
 import java.util.UUID
 import org.http4s.dsl.impl.QueryParamDecoderMatcher
 
-// TODO:
-// - chat breaks after first message
-// - append user queries to the chat
-
 final class ChatController(
   pubSub: PubSub[IO],
 )(using
@@ -37,6 +33,7 @@ final class ChatController(
   // TODO:
   // - create new chat and persist it's id
   // - chat history
+
   private val chatId = UUID.fromString("f47ac10b-58cc-4372-a567-0e02b2c3d479")
 
   private def appPrompt(query: String, context: Option[String]) = Prompt(
@@ -65,20 +62,7 @@ final class ChatController(
 
       topicId = queryId.toString
 
-      // TODO: group retrieved embeddings by documentId, version, and fragmentIndex
-
-      // grouppedEmbeddings = retrievedEmbeddings.groupBy(_.documentId)
-
-      // _ <- pubSub.publish(
-      //        PubSub.Message(
-      //          topicId = queryId.toString,
-      //          eventType = ChatView.queryResponseEvent,
-      //          content = retrievedEmbeddings
-      //           .map( embedding =>
-      //               embedding.chunk.
-      //           ).some,
-      //        ),
-      //      )
+      // TODO: group retrieved embeddings by (documentId, version, fragmentIndex) and show them in chat
 
       contextChunks = retrievedEmbeddings.map(_.chunk)
       _            <- debug"Retrieved context: ${contextChunks.map(_.toEmbeddingInput)}"

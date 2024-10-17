@@ -16,8 +16,6 @@
 //> using dep com.outr::scribe-slf4j2:3.15.0
 //> using dep com.outr::scribe-file:3.15.0
 
-///> using dep ch.qos.logback:logback-classic:1.5.11
-
 package supportbot
 
 import cats.syntax.all.*

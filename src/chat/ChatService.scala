@@ -30,6 +30,3 @@ trait ChatChunkResponse:
   /** The content of the response, merged from the sequence of deltas in single response chunk.
     */
   def contentDeltas: String
-
-
-// asking for status in jiRA
