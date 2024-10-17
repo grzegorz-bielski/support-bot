@@ -18,7 +18,7 @@ trait EmbeddingService[F[_]]:
   def createIndexEmbeddings(document: Document): F[Vector[Embedding.Index]]
   def createQueryEmbeddings(chunk: Chunk): F[Embedding.Query]
 
-final class SttpOpenAIEmbeddingService(openAIProtocol: OpenAI, model: Model)(using backend: SttpBackend)
+final class SttpOpenAIEmbeddingService(model: Model)(using backend: SttpBackend, openAIProtocol: OpenAI)
     extends EmbeddingService[IO]:
   val embeddingModel = EmbeddingsModel.CustomEmbeddingsModel(model)
 
