@@ -17,7 +17,10 @@ final class SttpOpenAIChatService(openAIProtocol: OpenAI, model: Model)(using
   backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
 ) extends ChatService[IO]:
   import SttpOpenAIChatService.*
-  val chatModel = ChatCompletionModel.CustomChatCompletionModel(model)
+
+  private val chatModel = ChatCompletionModel.CustomChatCompletionModel(model)
+
+  private val choicesAmount = 1
 
   def chatCompletion(prompt: Prompt): Stream[IO, ChatChunkResponse] =
     Stream
@@ -30,12 +33,15 @@ final class SttpOpenAIChatService(openAIProtocol: OpenAI, model: Model)(using
       .flatten
       .map: response =>
         new ChatChunkResponse:
-          def contentDeltas: String = response.choices.map(_.delta.content.mkString).mkString
+          def contentDeltas: String = 
+            // assuming only one choice (configured by `choicesAmount`)
+            response.choices.headOption.flatMap(_.delta.content).getOrElse("")
 
   private def createChatBody(prompt: Prompt) =
     ChatBody(
       model = chatModel,
       messages = bodyMessages(prompt),
+      n = choicesAmount.some,
       tools = Some(
         Seq(
           // Tool.FunctionTool(

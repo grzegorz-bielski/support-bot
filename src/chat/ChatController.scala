@@ -62,15 +62,31 @@ final class ChatController(
     for
       queryEmbeddings     <- embeddingService.createQueryEmbeddings(Chunk(query.content, index = 0))
       retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings).compile.toVector
-      contextChunks        = retrievedEmbeddings.map(_.chunk)
-      _                   <- debug"Retrieved context: ${contextChunks.map(_.toEmbeddingInput)}"
+
+      topicId = queryId.toString
+
+      // TODO: group retrieved embeddings by documentId, version, and fragmentIndex
+
+      // grouppedEmbeddings = retrievedEmbeddings.groupBy(_.documentId)
+
+      // _ <- pubSub.publish(
+      //        PubSub.Message(
+      //          topicId = queryId.toString,
+      //          eventType = ChatView.queryResponseEvent,
+      //          content = retrievedEmbeddings
+      //           .map( embedding =>
+      //               embedding.chunk.
+      //           ).some,
+      //        ),
+      //      )
+
+      contextChunks = retrievedEmbeddings.map(_.chunk)
+      _            <- debug"Retrieved context: ${contextChunks.map(_.toEmbeddingInput)}"
 
       finalPrompt = appPrompt(
                       query = query.content,
                       context = contextChunks.map(_.toEmbeddingInput).mkString("\n").some,
                     )
-
-      topicId = queryId.toString
 
       _ <- chatService
              .chatCompletion(finalPrompt)
@@ -115,7 +131,7 @@ final class ChatController(
             .subscribe(topicId)
             .map: message =>
               ServerSentEvent(
-                data = message.content.some,
+                data = ChatView.responseChunk(message.content).render.some,
                 eventType = message.eventType.some,
               )
             .evalTap: msg =>
@@ -132,7 +148,8 @@ final class ChatController(
           query   <- req.as[ChatQuery]
           queryId <- IO.randomUUID
           _       <- info"Received query: $query"
-          _       <- processQuery(query, queryId, chatId).start // TODO: use .background / Resource and maybe queue requests
+          // TODO: use .background / Resource and maybe queue requests
+          _       <- processQuery(query, queryId, chatId).start
           res     <-
             Ok(ChatView.responseMessage(query, queryId, chatId))
         yield res
@@ -193,6 +210,22 @@ object ChatView extends HtmxView:
           `hx-swap`     := "beforeend scroll:bottom",
         )(),
       ),
+    )
+
+  def responseChunk(content: String) =
+    span(sanitizeChunk(content))
+
+  private def sanitizeChunk(input: String) =
+    // TODO: this could be potentially dangerous, use a proper HTML sanitizer
+    raw(
+      input
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#x27;")
+        .replaceAll("/", "&#x2F;")
+        .replaceAll("\n", br().render),
     )
 
   def messages() =

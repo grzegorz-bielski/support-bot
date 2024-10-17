@@ -19,7 +19,7 @@ import org.typelevel.log4cats.syntax.*
 
 def httpApp(
   host: Host = ipv4"0.0.0.0",
-  port: Port = port"8081",
+  port: Port = port"8080",
   controllers: Controller*,
 ): Resource[IO, Server] =
   val app = for
