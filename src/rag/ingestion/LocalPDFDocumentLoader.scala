@@ -1,5 +1,6 @@
 package supportbot
 package rag
+package ingestion
 
 import cats.syntax.all.*
 import cats.effect.*
@@ -10,16 +11,16 @@ import org.apache.pdfbox.Loader
 import smile.nlp.*
 import org.apache.pdfbox.text.*
 
-object DocumentLoader:
-  def loadPDF(file: File, documentId: String, documentVersion: Int): IO[Document] =
-    IO.blocking(fromPDFUnsafe(file, documentId, documentVersion))
+object LocalPDFDocumentLoader:
+  def loadPDF(file: File, documentId: DocumentId): IO[Document.Ingested] =
+    IO.blocking(fromPDFUnsafe(file, documentId))
 
-  private def fromPDFUnsafe(file: File, documentId: String, documentVersion: Int): Document =
+  private def fromPDFUnsafe(file: File, documentId: DocumentId): Document.Ingested =
     val document = Loader.loadPDF(file)
 
     // 1 based index
     val allFragments = (1 to document.getNumberOfPages)
-      .foldLeft(Vector.newBuilder[DocumentFragment]): (builder, pageNr) =>
+      .foldLeft(Vector.newBuilder[Document.Fragment]): (builder, pageNr) =>
         // this has a couple of issues:
         // 1. it doesn't handle text that spans multiple pages
         // 2. it repeats the document title on every page
@@ -35,7 +36,7 @@ object DocumentLoader:
             .sentences
             .toVector
             .mapWithIndex: (sentence, sentenceNr) =>
-              DocumentFragment(
+              Document.Fragment(
                 index = pageNr,
                 chunk = Chunk(
                   text = sentence,
@@ -45,5 +46,5 @@ object DocumentLoader:
               )
       .result()
 
-    Document(id = documentId, version = documentVersion, fragments = allFragments)
+    Document.Ingested(documentId = documentId, fragments = allFragments)
 

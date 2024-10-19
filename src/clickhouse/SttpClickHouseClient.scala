@@ -19,19 +19,36 @@ import sttp.model.Uri
 import ClickHouseClient.*
 
 trait ClickHouseClient[F[_]]:
-  def streamQueryJson[T: JsonValueCodec](query: String): Stream[F, T]
-  def streamQueryTextLines(query: String): Stream[F, String]
-  def executeQuery(query: String): F[Unit]
+  def streamQueryJson[T](query: String)(using qs: QuerySettings, codec: JsonValueCodec[T]): Stream[F, T]
+  def streamQueryTextLines(query: String)(using QuerySettings): Stream[F, String]
+  def executeQuery(query: String)(using QuerySettings): F[Unit]
 
 object ClickHouseClient:
+  type IntBool = 0 | 1
+
+  given QuerySettings = QuerySettings.default
+
+  // this uses snake_case deliberately to match the CH setting names 1:1
+  final case class QuerySettings(
+    wait_end_of_query: Option[IntBool] = None,
+    output_format_json_quote_64bit_integers: Option[IntBool] = Some(0),
+    allow_experimental_usearch_index: Option[IntBool] = Some(1),
+    enable_http_compression: Option[IntBool] = Some(1),
+  ):
+    def asMap: Map[String, String] =
+      productElementNames.zip(productIterator.map(_.toString)).toMap
+
+  object QuerySettings:
+    lazy val default: QuerySettings = QuerySettings()
+
   final case class Config(
-      url: String,
-      username: String,
-      password: String,
-      httpReadTimeout: Duration = 10.seconds
+    url: String,
+    username: String,
+    password: String,
+    httpReadTimeout: Duration = 10.seconds,
   )
 
-  sealed trait Error extends NoStackTrace derives CanEqual
+  sealed trait Error extends NoStackTrace
   object Error:
     final case class QueryFailed(details: String) extends Error:
       override def getMessage: String = details
@@ -42,14 +59,14 @@ object ClickHouseClient:
 final class SttpClickHouseClient(config: ClickHouseClient.Config)(using backend: SttpBackend)
     extends ClickHouseClient[IO]:
 
-  def executeQuery(query: String): IO[Unit] =
+  def executeQuery(query: String)(using QuerySettings): IO[Unit] =
     requestOf(query)
       .send(backend)
       .map(_.body.leftMap(ClickHouseClient.Error.QueryFailed.apply))
       .rethrow
       .void
 
-  def streamQueryJson[T: JsonValueCodec](query: String): Stream[IO, T] =
+  def streamQueryJson[T](query: String)(using qs: QuerySettings, codec: JsonValueCodec[T]): Stream[IO, T] =
     streamQueryTextLines(query).through:
       _.collect:
         case line if line.nonEmpty =>
@@ -57,7 +74,7 @@ final class SttpClickHouseClient(config: ClickHouseClient.Config)(using backend:
             .leftMap(error => ClickHouseClient.Error.ParsingFailed(error.getMessage, line))
       .rethrow
 
-  def streamQueryTextLines(query: String): Stream[IO, String] =
+  def streamQueryTextLines(query: String)(using QuerySettings): Stream[IO, String] =
     Stream
       .eval:
         requestOf(query).response(asStreamUnsafe(Fs2Streams[IO])).send(backend)
@@ -67,18 +84,16 @@ final class SttpClickHouseClient(config: ClickHouseClient.Config)(using backend:
       .through(text.utf8.decode)
       .through(text.lines)
 
-  private def requestOf(query: String) =
+  private def requestOf(query: String)(using settings: QuerySettings) =
+    val url =
+      uri"${config.url}".addParams(settings.asMap)
+
     basicRequest
-      .post(
-        uri"${config.url}"
-          .addParam("output_format_json_quote_64bit_integers", "0")
-          .addParam("allow_experimental_usearch_index", "1")
-          .addParam("enable_http_compression", "1")
-      )
+      .post(url)
       .auth
       .basic(
         user = config.username,
-        password = config.password
+        password = config.password,
       )
       .body(query)
       .readTimeout(config.httpReadTimeout)

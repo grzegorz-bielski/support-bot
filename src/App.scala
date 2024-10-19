@@ -15,6 +15,7 @@
 //> using dep org.typelevel::log4cats-slf4j:2.7.0
 //> using dep com.outr::scribe-slf4j2:3.15.0
 //> using dep com.outr::scribe-file:3.15.0
+///> using dep org.flywaydb:flyway-core:8.5.0
 
 package supportbot
 
@@ -29,6 +30,7 @@ import java.io.File
 
 import supportbot.rag.*
 import supportbot.rag.vectorstore.*
+import supportbot.rag.ingestion.*
 import supportbot.chat.*
 import supportbot.home.*
 import supportbot.clickhouse.*
@@ -36,57 +38,64 @@ import supportbot.clickhouse.*
 object SupportBot extends ResourceApp.Forever:
   def run(args: List[String]): Resource[IO, Unit] =
     for
-      _                         <- AppLogger.configure.toResource
-      given SttpBackend         <- SttpBackend.resource
-      clickHouseVectorStore     <- ClickHouseVectorStore
-                                     .sttpBased(
-                                       ClickHouseClient.Config(
-                                         url = "http://localhost:8123",
-                                         username = "default",
-                                         password = "default",
-                                       ),
-                                     )
-                                     .toResource
-      given VectorStore[IO]      = clickHouseVectorStore
-      _                         <- clickHouseVectorStore.migrate().toResource
-      given OpenAI               = OpenAI("ollama", uri"http://localhost:11434/v1")
-      given ChatService[IO]      = SttpOpenAIChatService(
-                                     model = Model("llama3.1")
-                                    //  model = Model("llama3.1:8b-instruct-q4_0"),
-                                   )
-      given EmbeddingService[IO] = SttpOpenAIEmbeddingService(
-                                     model = Model("snowflake-arctic-embed"),
-                                   )
+      _                               <- AppLogger.configure.toResource
+      given SttpBackend               <- SttpBackend.resource
+      given ClickHouseClient[IO]       = SttpClickHouseClient(
+                                           ClickHouseClient.Config(
+                                             url = "http://localhost:8123",
+                                             username = "default",
+                                             password = "default",
+                                           ),
+                                         )
+      migrator                         = ClickHouseMigrator(
+                                           ClickHouseMigrator.Config(
+                                             database = "default",
+                                           ),
+                                         )
+      given VectorStoreRepository[IO] <- ClickHouseVectorStore.of.toResource
+      given OpenAI                     = OpenAI("ollama", uri"http://localhost:11434/v1")
+      given ChatService[IO]            = SttpOpenAIChatService(
+                                           model = Model("llama3.1"),
+                                           //  model = Model("llama3.1:8b-instruct-q4_0"),
+                                         )
+      given EmbeddingService[IO]       = SttpOpenAIEmbeddingService(
+                                           model = Model("snowflake-arctic-embed"),
+                                         )
 
       // offline - parsing and indexing
-      _                         <- createLocalPdfEmbeddings(
-                                     File("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
-                                   ).toResource
+      _                               <- createLocalPdfEmbeddings(
+                                           File("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
+                                         ).toResource
 
       chatController <- ChatController.of()
 
       _ <- httpApp(
-        controllers = 
-          Vector(
-            chatController, 
-            HomeController
-          ),
-        )
+             controllers = Vector(
+               chatController,
+               HomeController,
+             ),
+           )
     yield ()
 
   // TODO: move to some ingestion service
-  def createLocalPdfEmbeddings(file: File)(using vectorStore: VectorStore[IO], embeddingService: EmbeddingService[IO]) =
+  def createLocalPdfEmbeddings(
+    file: File,
+  )(using vectorStore: VectorStoreRepository[IO], embeddingService: EmbeddingService[IO]) =
     // TODO: make this user input
-    val documentId      = file.getName
-    val documentVersion = 1
+    // val documentId      = file.getName
+    // val documentVersion = 1
+    val documentId = DocumentId(
+      name = file.getName,
+      version = 1,
+    )
 
     vectorStore
-      .documentEmbeddingsExists(documentId, documentVersion)
+      .documentEmbeddingsExists(documentId)
       .ifM(
         IO.println(s"Embeddings for document $documentId already exists. Skipping the chunking and indexing."),
         for
           _               <- IO.println("Chunking PDF")
-          document        <- DocumentLoader.loadPDF(file, documentId, documentVersion)
+          document        <- LocalPDFDocumentLoader.loadPDF(file, documentId)
           _               <- IO.println(s"Creating embeddings. It may take a while...")
           indexEmbeddings <- embeddingService.createIndexEmbeddings(document)
           _               <- IO.println(s"Created ${indexEmbeddings.size} embeddings.")

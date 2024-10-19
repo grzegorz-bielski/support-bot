@@ -15,14 +15,14 @@ import sttp.openai.requests.embeddings.EmbeddingsRequestBody.*
 import sttp.openai.requests.embeddings.EmbeddingsResponseBody.*
 
 trait EmbeddingService[F[_]]:
-  def createIndexEmbeddings(document: Document): F[Vector[Embedding.Index]]
+  def createIndexEmbeddings(document: Document.Ingested): F[Vector[Embedding.Index]]
   def createQueryEmbeddings(chunk: Chunk): F[Embedding.Query]
 
 final class SttpOpenAIEmbeddingService(model: Model)(using backend: SttpBackend, openAIProtocol: OpenAI)
     extends EmbeddingService[IO]:
   val embeddingModel = EmbeddingsModel.CustomEmbeddingsModel(model)
 
-  def createIndexEmbeddings(document: Document): IO[Vector[Embedding.Index]] =
+  def createIndexEmbeddings(document: Document.Ingested): IO[Vector[Embedding.Index]] =
     createEmbeddings(
       EmbeddingsInput.MultipleInput(
         document.fragments.map(_.chunk.toEmbeddingInput),
@@ -35,8 +35,7 @@ final class SttpOpenAIEmbeddingService(model: Model)(using backend: SttpBackend,
             Embedding.Index(
               chunk = fragment.chunk,
               value = embeddingData.embeddingValues,
-              documentId = document.id,
-              documentVersion = document.version,
+              documentId = document.documentId,
               fragmentIndex = fragment.index,
             )
 

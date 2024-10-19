@@ -23,7 +23,7 @@ final class ChatController(
 )(using
   logger: Logger[IO],
   chatService: ChatService[IO],
-  vectorStore: VectorStore[IO],
+  vectorStore: VectorStoreRepository[IO],
   embeddingService: EmbeddingService[IO],
 ) extends HtmxController:
   import ChatController.*
@@ -33,6 +33,7 @@ final class ChatController(
   // TODO:
   // - create new chat and persist it's id
   // - chat history
+  // - do not hardcode chatId
 
   private val chatId = UUID.fromString("f47ac10b-58cc-4372-a567-0e02b2c3d479")
 
@@ -132,7 +133,7 @@ final class ChatController(
         yield res
 
 object ChatController:
-  def of()(using ChatService[IO], VectorStore[IO], EmbeddingService[IO]): Resource[IO, ChatController] =
+  def of()(using ChatService[IO], VectorStoreRepository[IO], EmbeddingService[IO]): Resource[IO, ChatController] =
     for
       given Logger[IO] <- Slf4jLogger.create[IO].toResource
       pubSub           <- PubSub.resource[IO]

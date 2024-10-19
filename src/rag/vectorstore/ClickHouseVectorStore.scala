@@ -14,15 +14,16 @@ import org.typelevel.log4cats.syntax.*
 import unindent.*
 import java.util.Base64
 
-final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]) extends VectorStore[IO]:
+final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]) extends VectorStoreRepository[IO]:
   import ClickHouseVectorStore.*
 
   def store(index: Vector[Embedding.Index]): IO[Unit] =
     index.headOption
       .traverse: embedding =>
-        documentEmbeddingsExists(embedding.documentId, embedding.documentVersion).ifM(
+        // TODO: maybe this should not be a part of the store method
+        documentEmbeddingsExists(embedding.documentId).ifM(
           info"Embeddings for document ${embedding.documentId} already exists. Skipping the insertion.",
-          storeEmbeddings(index)
+          storeEmbeddings(index),
         )
       .void
 
@@ -31,11 +32,11 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .map: embedding =>
         import embedding.*
 
-        val metadata = s"{${chunk.metadata.toVector.map((k, v) => s"'$k':'$v'").mkString(", ")}}"
-        val embeddings = s"[${value.mkString(", ")}]"
+        val metadata     = s"{${chunk.metadata.toVector.map((k, v) => s"'$k':'$v'").mkString(", ")}}"
+        val embeddings   = s"[${value.mkString(", ")}]"
         val encodedValue = s"'${base64TextEncode(chunk.text)}'"
 
-        s"('$documentId', $documentVersion, $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
+        s"('${documentId.name}', ${documentId.version}, $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
       .mkString(",\n")
 
     val insertQuery =
@@ -47,18 +48,18 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
     client.executeQuery(insertQuery) *>
       info"Stored ${embeddings.size} embeddings."
 
-  def documentEmbeddingsExists(documentId: String, documentVersion: Int): IO[Boolean] =
+  def documentEmbeddingsExists(documentId: DocumentId): IO[Boolean] =
     client
       .streamQueryTextLines:
         i"""
         SELECT
          EXISTS(
           SELECT 
-           document_id, 
+           document_name, 
            document_version 
           FROM embeddings 
-          WHERE document_id = '$documentId'
-          AND document_version = $documentVersion
+          WHERE document_name = '${documentId.name}'
+          AND document_version = ${documentId.version}
           LIMIT 1
          )
         """.stripMargin
@@ -76,7 +77,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
           WITH matched_embeddings AS (
             SELECT * FROM (
               SELECT 
-                document_id,
+                document_name,
                 document_version, 
                 fragment_index,
                 value,
@@ -86,10 +87,10 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
               ORDER BY score ASC
               LIMIT 3
             ) 
-            LIMIT 1 BY document_id, document_version, fragment_index
+            LIMIT 1 BY document_name, document_version, fragment_index
           )
           SELECT 
-            document_id,
+            document_name,
             document_version,
             fragment_index,
             chunk_index,
@@ -98,35 +99,34 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
             score
           FROM matched_embeddings AS e
           INNER JOIN embeddings AS ae
-          ON ae.document_id = e.document_id
+          ON ae.document_name = e.document_name
           AND ae.document_version = e.document_version
           AND
               ae.fragment_index = e.fragment_index OR
               ae.fragment_index = e.fragment_index - 1 OR
               ae.fragment_index = e.fragment_index + 1
-          ORDER BY document_id, document_version, fragment_index, chunk_index
+          ORDER BY document_name, document_version, fragment_index, chunk_index
           FORMAT JSONEachRow
         """
       .map: row =>
         Embedding.Retrieved(
+          documentId = DocumentId(name = row.document_name, version = row.document_version),
           chunk = Chunk(text = row.value, index = row.chunk_index, metadata = row.metadata),
           value = embedding.value,
-          documentId = row.document_id,
-          documentVersion = row.document_version,
           fragmentIndex = row.fragment_index,
-          score = row.score
+          score = row.score,
         )
 
   def migrate(): IO[Unit] =
     // TODO: temp, move to migration scripts
     Vector(
-      // i"""
-      // DROP TABLE IF EXISTS embeddings;
-      // """,
+      i"""
+      DROP TABLE IF EXISTS embeddings;
+      """,
       i"""
       CREATE TABLE IF NOT EXISTS embeddings
       (
-        document_id String,           -- unique identifier for the document, for now it's the file name
+        document_name String,         -- name of the document, like a file name
         document_version Int64,       -- version of the document, for now it's 1
         fragment_index Int64,         -- index of the fragment (like page) in the document
         chunk_index Int64,            -- index of the chunk in the fragment
@@ -136,28 +136,28 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
         INDEX ann_idx embedding TYPE usearch('cosineDistance')
       )
       ENGINE = MergeTree()            -- not replacing, as we want to keep all embeddings for a given fragment_index
-      ORDER BY (document_id, document_version, fragment_index)
-      """
+      ORDER BY (document_name, document_version, fragment_index)
+      """,
     ).traverse_(client.executeQuery)
 
   private def base64TextEncode(input: String): String =
-    val charset = "UTF-8"
-    val encoder = Base64.getEncoder // RFC4648 as on the decoder side in CH
+    val charset      = "UTF-8"
+    val encoder      = Base64.getEncoder // RFC4648 as on the decoder side in CH
     val encodedBytes = encoder.encode(input.getBytes(charset))
 
     String(encodedBytes, charset)
 
 object ClickHouseVectorStore:
-  def sttpBased(config: ClickHouseClient.Config)(using SttpBackend): IO[ClickHouseVectorStore] =
+  def of(using client: ClickHouseClient[IO]): IO[ClickHouseVectorStore] =
     for given Logger[IO] <- Slf4jLogger.create[IO]
-    yield ClickHouseVectorStore(SttpClickHouseClient(config))
+    yield ClickHouseVectorStore(client)
 
   private final case class ClickHouseRetrievedRow(
-      document_id: String,
-      document_version: Int,
-      fragment_index: Int,
-      chunk_index: Int,
-      value: String,
-      metadata: Map[String, String],
-      score: Double
+    document_name: String,
+    document_version: Int,
+    fragment_index: Int,
+    chunk_index: Int,
+    value: String,
+    metadata: Map[String, String],
+    score: Double,
   ) derives ConfiguredJsonValueCodec

@@ -6,44 +6,43 @@ import cats.syntax.all.*
 import cats.effect.*
 import fs2.*
 
-final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends VectorStore[IO]:
+final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends VectorStoreRepository[IO]:
   def store(index: Vector[Embedding.Index]): IO[Unit] =
     ref.update(_ ++ index).void
 
   def retrieve(query: Embedding.Query): Stream[IO, Embedding.Retrieved] =
     Stream.eval(ref.get).flatMap(KNN.retrieve(_, query))
 
-  def documentEmbeddingsExists(documentId: String, documentVersion: Int): IO[Boolean] =
-    ref.get.map(_.exists(index => index.documentId == documentId && index.documentVersion == documentVersion))
+  def documentEmbeddingsExists(documentId: DocumentId): IO[Boolean] =
+    ref.get.map(_.exists(_.documentId == documentId))
 
   private object KNN:
     def retrieve(
-        index: Vector[Embedding.Index], // assuming this comes from all the documents
-        query: Embedding.Query // to be classified
+      index: Vector[Embedding.Index], // assuming this comes from all the documents
+      query: Embedding.Query,         // to be classified
     ): Stream[IO, Embedding.Retrieved] =
       Stream.emits:
         for
-          (neighbor, score) <- findKNearestNeighbors(
-            data = index.map(embedding => (embedding.value.map(_.toDouble), embedding)),
-            input = query.value.map(_.toDouble),
-            k = 3
-          )
+          (neighbor, score)  <- findKNearestNeighbors(
+                                  data = index.map(embedding => (embedding.value.map(_.toDouble), embedding)),
+                                  input = query.value.map(_.toDouble),
+                                  k = 3,
+                                )
           // neighbor lookup window, like +/- 1 page
           fragmentsIndexRange =
             neighbor.fragmentIndex - 1 to neighbor.fragmentIndex + 1
           // full scan...
-          neighboringChunk <- index.collect:
-            case embedding: Embedding.Index
-                if neighbor.documentId == embedding.documentId &&
-                  fragmentsIndexRange.contains(embedding.fragmentIndex) =>
-              Embedding.Retrieved(
-                chunk = embedding.chunk,
-                value = embedding.value,
-                documentId = embedding.documentId,
-                documentVersion = embedding.documentVersion,
-                fragmentIndex = embedding.fragmentIndex,
-                score = score // score for the main chunk, not the neighboring chunk
-              )
+          neighboringChunk   <- index.collect:
+                                  case embedding: Embedding.Index
+                                      if neighbor.documentId == embedding.documentId &&
+                                        fragmentsIndexRange.contains(embedding.fragmentIndex) =>
+                                    Embedding.Retrieved(
+                                      chunk = embedding.chunk,
+                                      value = embedding.value,
+                                      documentId = embedding.documentId,
+                                      fragmentIndex = embedding.fragmentIndex,
+                                      score = score, // score for the main chunk, not the neighboring chunk
+                                    )
         yield neighboringChunk
 
     private def cosineSimilarity(vec1: Vector[Double], vec2: Vector[Double]): Double =
@@ -57,9 +56,9 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
         case (acc, (ui, vi)) => acc + (ui * vi)
 
     private def findKNearestNeighbors[T](
-        data: Vector[(Vector[Double], T)],
-        input: Vector[Double],
-        k: Int
+      data: Vector[(Vector[Double], T)],
+      input: Vector[Double],
+      k: Int,
     ): Vector[(T, Double)] =
       data
         .map: (features, label) =>

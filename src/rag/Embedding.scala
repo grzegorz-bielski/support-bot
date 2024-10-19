@@ -7,8 +7,7 @@ object Embedding:
   final case class Index(
     chunk: Chunk,
     value: Vector[Float],
-    documentId: String,
-    documentVersion: Int,
+    documentId: DocumentId,
     fragmentIndex: Int,
   )
 
@@ -17,8 +16,7 @@ object Embedding:
   final case class Retrieved(
     chunk: Chunk,
     value: Vector[Float],
-    documentId: String,
-    documentVersion: Int,
+    documentId: DocumentId,
     fragmentIndex: Int,
     score: Double,
   )
