@@ -1,5 +1,6 @@
 //> using scala 3.5.1
 //> using toolkit typelevel:0.1.28
+//> using dep org.typelevel::kittens::3.4.0
 //> using dep com.lihaoyi::scalatags::0.13.1
 //> using dep org.http4s::http4s-dsl::0.23.28
 //> using dep org.http4s::http4s-ember-server::0.23.28
@@ -47,11 +48,9 @@ object SupportBot extends ResourceApp.Forever:
                                              password = "default",
                                            ),
                                          )
-      migrator                         = ClickHouseMigrator(
-                                           ClickHouseMigrator.Config(
-                                             database = "default",
-                                           ),
-                                         )
+      migrator                        <- ClickHouseMigrator
+                                           .of(ClickHouseMigrator.Config(database = "default"))
+                                           .toResource
       given VectorStoreRepository[IO] <- ClickHouseVectorStore.of.toResource
       given OpenAI                     = OpenAI("ollama", uri"http://localhost:11434/v1")
       given ChatService[IO]            = SttpOpenAIChatService(

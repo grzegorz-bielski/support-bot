@@ -2,6 +2,8 @@ package supportbot
 package clickhouse
 
 import cats.effect.*
+import cats.derived.*
+import cats.kernel.*
 import cats.effect.kernel.Resource
 import cats.syntax.all.*
 import fs2.{Pipe, Stream, Chunk, text}
@@ -9,7 +11,6 @@ import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.*
 import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 import org.typelevel.log4cats.syntax.*
-import org.typelevel.log4cats.slf4j.Slf4jFactory
 import org.typelevel.log4cats.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import scala.util.Try
@@ -24,7 +25,10 @@ trait ClickHouseClient[F[_]]:
   def executeQuery(query: String)(using QuerySettings): F[Unit]
 
 object ClickHouseClient:
+  // uses 0 | 1 deliberately to match the CH settings conventions
   type IntBool = 0 | 1
+  given Semigroup[IntBool] = 
+    Semigroup.instance((a, b) => (a | b).asInstanceOf[IntBool]) 
 
   given QuerySettings = QuerySettings.default
 
@@ -34,7 +38,7 @@ object ClickHouseClient:
     output_format_json_quote_64bit_integers: Option[IntBool] = Some(0),
     allow_experimental_usearch_index: Option[IntBool] = Some(1),
     enable_http_compression: Option[IntBool] = Some(1),
-  ):
+  ) derives Monoid:
     def asMap: Map[String, String] =
       productElementNames.zip(productIterator.map(_.toString)).toMap
 

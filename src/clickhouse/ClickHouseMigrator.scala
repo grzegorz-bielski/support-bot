@@ -9,11 +9,14 @@ import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.*
 import scala.util.control.NoStackTrace
 import java.security.MessageDigest
+import org.typelevel.log4cats.syntax.*
+import org.typelevel.log4cats.slf4j.*
+import org.typelevel.log4cats.*
 
 import ClickHouseMigrator.*
 
 // inspired by https://github.com/VVVi/clickhouse-migrations
-final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO]):
+final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO], logger: Logger[IO]):
   private val migrationsTable = "schema_migrations"
 
   def migrate(migrations: Vector[Migration]): IO[Unit] =
@@ -25,49 +28,58 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
       _ <- applyMigrations(migrations)
     yield ()
 
-  private def applyMigrations(migrations: Vector[Migration])(using QuerySettings): IO[Unit] =
+  private def applyMigrations(migrations: Vector[Migration])(using querySettings: QuerySettings): IO[Unit] =
     for
+      appliedMigrationsByVersion <- getAppliedMigrations
+      migrationsWithChecksums     = migrations.map(m => m -> calculateChecksum(m.ddl))
+      _                          <- validateMigrations(migrationsWithChecksums, appliedMigrationsByVersion)
+      _                          <- migrationsWithChecksums.traverse: (migration, checksum) =>
+                                      val ddlQuerySettings = querySettings.combine(migration.querySettings.combineAll)
 
-      // get applied migrations
-      appliedMigrations         <- client
-                                     .streamQueryJson[AppliedMigrationRow]:
-                                       i"""
-                                        SELECT version, checksum, name 
-                                        FROM $migrationsTable 
-                                        ORDER BY version
-                                        """
-                                     .compile
-                                     .toVector
-      appliedMigrationsByVersion = appliedMigrations.map(m => m.version -> m).toMap
-
-      // calculate checksums for passed migrations
-      migrationsWithChecksums = migrations.map(migration => migration -> calculateChecksum(migration.ddl))
-
-      // validate passed migrations
-      _ <- migrationsWithChecksums.traverse: (migration, checksum) =>
-             for
-               appliedMigration <-
-                 IO.fromOption(appliedMigrationsByVersion.get(migration.version)):
-                   Error.MigrationMissing(migration.name)
-               _                <-
-                 IO.raiseUnless(appliedMigration.checksum == checksum):
-                   Error.MigrationChecksumMismatch(migration.name)
-             yield ()
-
-      // actually apply migrations
-      _ <- migrationsWithChecksums.traverse: (migration, checksum) =>
-             // TODO: handle extra query settings
-             // TODO: log what was applied
-
-             // assuming the migration is idempotent,
-             // so it's safe to apply it multiple times in case of migration table update failure
-             client.executeQuery(migration.ddl) *>
-               client.executeQuery:
-                 i"""
-                                      INSERT INTO $migrationsTable (version, checksum, name) 
-                                      VALUES (${migration.version}, '$checksum', '${migration.name}')
-                                      """
+                                      // assuming the migration is idempotent (IF NOT EXISTS, etc),
+                                      // it's safe to apply it multiple times in case of migration table update failure
+                                      info"Applying migration ${migration.name}" *>
+                                        client.executeQuery(migration.ddl)(using ddlQuerySettings) *>
+                                        commitMigration(migration, checksum) *>
+                                        info"Migration ${migration.name} applied"
     yield ()
+
+  private def commitMigration(migration: Migration, checksum: String)(using QuerySettings): IO[Unit] =
+    client.executeQuery:
+      i"""
+      INSERT INTO $migrationsTable (version, checksum, name) 
+      VALUES (${migration.version}, '$checksum', '${migration.name}')
+      """
+
+  private def getAppliedMigrations(using QuerySettings): IO[Map[Int, AppliedMigrationRow]] =
+    client
+      .streamQueryJson[AppliedMigrationRow]:
+        i"""
+        SELECT version, checksum, name 
+        FROM $migrationsTable 
+        ORDER BY version
+        FORMAT JSONEachRow
+        """
+      .compile
+      .toVector
+      .map(_.map(m => m.version -> m).toMap)
+
+  private def validateMigrations(
+    migrationsWithChecksums: Vector[(Migration, String)],
+    appliedMigrationsByVersion: Map[Int, AppliedMigrationRow],
+  ): IO[Unit] =
+    migrationsWithChecksums
+      .traverse: (migration, checksum) =>
+        for
+          appliedMigration <-
+            IO.fromOption(appliedMigrationsByVersion.get(migration.version)):
+              Error.MigrationMissing(migration.name)
+          _                <-
+            IO.raiseUnless(appliedMigration.checksum == checksum):
+              Error.MigrationChecksumMismatch(migration.name)
+        yield ()
+      .void *>
+      info"Migrations are valid"
 
   private def calculateChecksum(value: String): String =
     MessageDigest
@@ -76,23 +88,31 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
       .map("%02x".format(_))
       .mkString
 
-  private def createDatabase(databaseName: String)(using QuerySettings): IO[Unit] = client.executeQuery:
-    i"CREATE DATABASE IF NOT EXISTS $databaseName"
+  private def createDatabase(databaseName: String)(using QuerySettings): IO[Unit] =
+    client.executeQuery:
+      i"CREATE DATABASE IF NOT EXISTS $databaseName"
+    *> info"Created database $databaseName"
 
-  private def createMigrationTable(using QuerySettings): IO[Unit] = client.executeQuery:
-    i"""
-    CREATE TABLE IF NOT EXISTS $migrationsTable (
-        uid UUID DEFAULT generateUUIDv4(),
-        version UInt32,
-        checksum String,
-        name String,
-        applied_at DateTime DEFAULT now()
-    )
-    ENGINE = MergeTree()
-    ORDER BY tuple(applied_at)
-    """
+  private def createMigrationTable(using QuerySettings): IO[Unit] =
+    client.executeQuery:
+      i"""
+      CREATE TABLE IF NOT EXISTS $migrationsTable (
+          uid UUID DEFAULT generateUUIDv4(),
+          version UInt32,
+          checksum String,
+          name String,
+          applied_at DateTime DEFAULT now()
+      )
+      ENGINE = MergeTree()
+      ORDER BY tuple(applied_at)
+      """
+    *> info"Created migration table $migrationsTable"
 
 object ClickHouseMigrator:
+  def of(config: Config)(using ClickHouseClient[IO]): IO[ClickHouseMigrator] =
+    for given Logger[IO] <- Slf4jLogger.create[IO]
+    yield ClickHouseMigrator(config)
+
   final case class Config(
     database: String,
   )
