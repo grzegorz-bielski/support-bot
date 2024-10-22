@@ -1,4 +1,5 @@
 package supportbot
+package clickhouse
 
 import cats.effect.*
 import cats.syntax.all.*
@@ -15,24 +16,38 @@ import org.typelevel.log4cats.*
 
 import ClickHouseMigrator.*
 
-// inspired by https://github.com/VVVi/clickhouse-migrations
+/** A simple ClickHouse migration tool.
+  *
+  * One migration is a single SQL query, applied sequentially, one after another, with monotonically increasing version
+  * numbers. There is no concept of `up` or `down` migrations.
+  *
+  * Inspired by https://github.com/VVVi/clickhouse-migrations
+  */
 final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO], logger: Logger[IO]):
   private val migrationsTable = "schema_migrations"
 
+  /** Migrate the database to the latest version.
+    *
+    * @param migrations
+    *   list of migrations to be applied sequentially
+    */
   def migrate(migrations: Vector[Migration]): IO[Unit] =
     given QuerySettings = QuerySettings.default.copy(wait_end_of_query = 1.some)
 
+    val versionedMigrations = migrations.mapWithIndex(_.asVersioned(_))
+
     for
-      _ <- createDatabase(config.database)
+      _ <- optionallyDropDatabase
+      _ <- createDatabase
       _ <- createMigrationTable
-      _ <- applyMigrations(migrations)
+      _ <- applyMigrations(versionedMigrations)
     yield ()
 
-  private def applyMigrations(migrations: Vector[Migration])(using querySettings: QuerySettings): IO[Unit] =
+  private def applyMigrations(migrations: Vector[VersionedMigration])(using querySettings: QuerySettings): IO[Unit] =
     for
       appliedMigrationsByVersion <- getAppliedMigrations
       migrationsWithChecksums     = migrations.map(m => m -> calculateChecksum(m.ddl))
-      _                          <- validateMigrations(migrationsWithChecksums, appliedMigrationsByVersion)
+      _                          <- validateMigrationsAgainstApplied(migrationsWithChecksums, appliedMigrationsByVersion)
       _                          <- migrationsWithChecksums.traverse: (migration, checksum) =>
                                       val ddlQuerySettings = querySettings.combine(migration.querySettings.combineAll)
 
@@ -44,7 +59,7 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
                                         info"Migration ${migration.name} applied"
     yield ()
 
-  private def commitMigration(migration: Migration, checksum: String)(using QuerySettings): IO[Unit] =
+  private def commitMigration(migration: VersionedMigration, checksum: String)(using QuerySettings): IO[Unit] =
     client.executeQuery:
       i"""
       INSERT INTO $migrationsTable (version, checksum, name) 
@@ -64,22 +79,24 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
       .toVector
       .map(_.map(m => m.version -> m).toMap)
 
-  private def validateMigrations(
-    migrationsWithChecksums: Vector[(Migration, String)],
+  private def validateMigrationsAgainstApplied(
+    migrationsWithChecksums: Vector[(VersionedMigration, String)],
     appliedMigrationsByVersion: Map[Int, AppliedMigrationRow],
   ): IO[Unit] =
-    migrationsWithChecksums
-      .traverse: (migration, checksum) =>
-        for
-          appliedMigration <-
-            IO.fromOption(appliedMigrationsByVersion.get(migration.version)):
-              Error.MigrationMissing(migration.name)
-          _                <-
-            IO.raiseUnless(appliedMigration.checksum == checksum):
-              Error.MigrationChecksumMismatch(migration.name)
-        yield ()
-      .void *>
-      info"Migrations are valid"
+    if appliedMigrationsByVersion.isEmpty then info"No migrations are applied yet"
+    else
+      migrationsWithChecksums
+        .traverse: (migration, checksum) =>
+          for
+            appliedMigration <-
+              IO.fromOption(appliedMigrationsByVersion.get(migration.version)):
+                Error.MigrationMissing(migration.name, migration.version)
+            _                <-
+              IO.raiseUnless(appliedMigration.checksum == checksum):
+                Error.MigrationChecksumMismatch(migration.name, migration.version)
+          yield ()
+        .void *>
+        info"Migrations are valid"
 
   private def calculateChecksum(value: String): String =
     MessageDigest
@@ -88,10 +105,16 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
       .map("%02x".format(_))
       .mkString
 
-  private def createDatabase(databaseName: String)(using QuerySettings): IO[Unit] =
+  private def optionallyDropDatabase(using QuerySettings): IO[Unit] =
+    IO.whenA(config.fresh):
+      client.executeQuery:
+        i"DROP DATABASE IF EXISTS ${config.databaseName}"
+      *> warn"Database ${config.databaseName} was just dropped! Here's your fresh start."
+
+  private def createDatabase(using QuerySettings): IO[Unit] =
     client.executeQuery:
-      i"CREATE DATABASE IF NOT EXISTS $databaseName"
-    *> info"Created database $databaseName"
+      i"CREATE DATABASE IF NOT EXISTS ${config.databaseName}"
+    *> info"Database ${config.databaseName} is created"
 
   private def createMigrationTable(using QuerySettings): IO[Unit] =
     client.executeQuery:
@@ -106,22 +129,26 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
       ENGINE = MergeTree()
       ORDER BY tuple(applied_at)
       """
-    *> info"Created migration table $migrationsTable"
+    *> info"Migration table $migrationsTable is created"
 
 object ClickHouseMigrator:
   def of(config: Config)(using ClickHouseClient[IO]): IO[ClickHouseMigrator] =
     for given Logger[IO] <- Slf4jLogger.create[IO]
     yield ClickHouseMigrator(config)
 
-  final case class Config(
-    database: String,
-  )
+  def migrate(config: Config)(using ClickHouseClient[IO]): IO[Unit] =
+    of(config).flatMap(_.migrate(AllMigrations))
 
-  final case class Migration(
-    version: Int,
-    name: String,
-    ddl: String,
-    querySettings: Option[QuerySettings] = None,
+  /** Configuration for the ClickHouse migrator.
+    *
+    * @param databaseName
+    *   name of the database to be migrated
+    * @param fresh
+    *   A fresh start. Indicates whether to drop the database before applying migrations. Do _not_ use in production!
+    */
+  final case class Config(
+    databaseName: String,
+    fresh: Boolean = false,
   )
 
   private final case class AppliedMigrationRow(
@@ -132,10 +159,10 @@ object ClickHouseMigrator:
 
   sealed trait Error extends NoStackTrace
   object Error:
-    final case class MigrationMissing(migrationName: String) extends Error:
+    final case class MigrationMissing(migrationName: String, version: Int) extends Error:
       override def getMessage: String =
-        s"Migration $migrationName is missing, but it was applied. Please check the migration scripts."
+        s"Migration `$migrationName v$version` is missing, but it was applied. Please check the migration scripts."
 
-    final case class MigrationChecksumMismatch(migrationName: String) extends Error:
+    final case class MigrationChecksumMismatch(migrationName: String, version: Int) extends Error:
       override def getMessage: String =
-        s"Migration $migrationName checksum mismatch. The migration script should not be changed after applying it."
+        s"Migration `$migrationName v$version` checksum mismatch. The migration script should not be changed after applying it."

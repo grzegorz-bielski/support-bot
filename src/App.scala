@@ -1,22 +1,31 @@
 //> using scala 3.5.1
 //> using toolkit typelevel:0.1.28
 //> using dep org.typelevel::kittens::3.4.0
-//> using dep com.lihaoyi::scalatags::0.13.1
+//> using dep org.typelevel::log4cats-slf4j:2.7.0
+
+//> using dep com.outr::scribe-slf4j2:3.15.0
+//> using dep com.outr::scribe-file:3.15.0
+
 //> using dep org.http4s::http4s-dsl::0.23.28
 //> using dep org.http4s::http4s-ember-server::0.23.28
 //> using dep org.http4s::http4s-scalatags::0.25.2
+
+//> using dep com.lihaoyi::scalatags::0.13.1
+
 //> using dep com.softwaremill.sttp.openai::fs2:0.2.4
 //> using dep com.softwaremill.sttp.openai::core:0.2.4
 //> using dep com.softwaremill.sttp.client4::cats:4.0.0-M17
+
 //> using dep com.github.haifengl::smile-scala:3.1.1
+
 //> using dep org.apache.pdfbox:pdfbox:3.0.3
+
 //> using dep com.davegurnell::unindent:1.8.0
+
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.30.15
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.30.15
-//> using dep org.typelevel::log4cats-slf4j:2.7.0
-//> using dep com.outr::scribe-slf4j2:3.15.0
-//> using dep com.outr::scribe-file:3.15.0
-///> using dep org.flywaydb:flyway-core:8.5.0
+
+//> using test.dep com.dimafeng::testcontainers-scala-munit::0.41.4
 
 package supportbot
 
@@ -30,8 +39,8 @@ import sttp.model.Uri.*
 import java.io.File
 
 import supportbot.rag.*
-import supportbot.rag.vectorstore.*
 import supportbot.rag.ingestion.*
+import supportbot.rag.vectorstore.*
 import supportbot.chat.*
 import supportbot.home.*
 import supportbot.clickhouse.*
@@ -48,8 +57,12 @@ object SupportBot extends ResourceApp.Forever:
                                              password = "default",
                                            ),
                                          )
-      migrator                        <- ClickHouseMigrator
-                                           .of(ClickHouseMigrator.Config(database = "default"))
+      _                               <- ClickHouseMigrator.migrate(
+                                             ClickHouseMigrator.Config(
+                                               databaseName = "default",
+                                               fresh = true,
+                                             ),
+                                           )
                                            .toResource
       given VectorStoreRepository[IO] <- ClickHouseVectorStore.of.toResource
       given OpenAI                     = OpenAI("ollama", uri"http://localhost:11434/v1")

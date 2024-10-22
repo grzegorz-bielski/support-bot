@@ -117,29 +117,6 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
           score = row.score,
         )
 
-  def migrate(): IO[Unit] =
-    // TODO: temp, move to migration scripts
-    Vector(
-      i"""
-      DROP TABLE IF EXISTS embeddings;
-      """,
-      i"""
-      CREATE TABLE IF NOT EXISTS embeddings
-      (
-        document_name String,         -- name of the document, like a file name
-        document_version Int64,       -- version of the document, for now it's 1
-        fragment_index Int64,         -- index of the fragment (like page) in the document
-        chunk_index Int64,            -- index of the chunk in the fragment
-        value String,                 -- base64 encoded value (likely just text) of the chunk
-        metadata Map(String, String), -- any additional metadata of the chunk
-        embedding Array(Float32),
-        INDEX ann_idx embedding TYPE usearch('cosineDistance')
-      )
-      ENGINE = MergeTree()            -- not replacing, as we want to keep all embeddings for a given fragment_index
-      ORDER BY (document_name, document_version, fragment_index)
-      """,
-    ).traverse_(client.executeQuery)
-
   private def base64TextEncode(input: String): String =
     val charset      = "UTF-8"
     val encoder      = Base64.getEncoder // RFC4648 as on the decoder side in CH

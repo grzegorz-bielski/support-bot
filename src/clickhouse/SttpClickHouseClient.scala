@@ -40,7 +40,10 @@ object ClickHouseClient:
     enable_http_compression: Option[IntBool] = Some(1),
   ) derives Monoid:
     def asMap: Map[String, String] =
-      productElementNames.zip(productIterator.map(_.toString)).toMap
+      productIterator.zipWithIndex
+        .collect:
+          case (Some(value), idx) => productElementName(idx) -> value.toString
+        .toMap
 
   object QuerySettings:
     lazy val default: QuerySettings = QuerySettings()
