@@ -8,7 +8,7 @@ object Embedding:
     chunk: Chunk,
     value: Vector[Float],
     documentId: DocumentId,
-    fragmentIndex: Int,
+    fragmentIndex: Long,
   )
 
   /** Embedding retrieved from the vector store
@@ -17,7 +17,7 @@ object Embedding:
     chunk: Chunk,
     value: Vector[Float],
     documentId: DocumentId,
-    fragmentIndex: Int,
+    fragmentIndex: Long,
     score: Double,
   )
 

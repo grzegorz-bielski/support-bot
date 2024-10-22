@@ -27,8 +27,8 @@ trait ClickHouseClient[F[_]]:
 object ClickHouseClient:
   // uses 0 | 1 deliberately to match the CH settings conventions
   type IntBool = 0 | 1
-  given Semigroup[IntBool] = 
-    Semigroup.instance((a, b) => (a | b).asInstanceOf[IntBool]) 
+  given Semigroup[IntBool] =
+    Semigroup.instance((a, b) => (a | b).asInstanceOf[IntBool])
 
   given QuerySettings = QuerySettings.default
 

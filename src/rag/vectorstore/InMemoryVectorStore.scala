@@ -10,8 +10,8 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
   def store(index: Vector[Embedding.Index]): IO[Unit] =
     ref.update(_ ++ index).void
 
-  def retrieve(query: Embedding.Query): Stream[IO, Embedding.Retrieved] =
-    Stream.eval(ref.get).flatMap(KNN.retrieve(_, query))
+  def retrieve(query: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
+    Stream.eval(ref.get).flatMap(KNN.retrieve(_, query, options.topK))
 
   def documentEmbeddingsExists(documentId: DocumentId): IO[Boolean] =
     ref.get.map(_.exists(_.documentId == documentId))
@@ -20,13 +20,14 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
     def retrieve(
       index: Vector[Embedding.Index], // assuming this comes from all the documents
       query: Embedding.Query,         // to be classified
+      topK: Int,
     ): Stream[IO, Embedding.Retrieved] =
       Stream.emits:
         for
           (neighbor, score)  <- findKNearestNeighbors(
                                   data = index.map(embedding => (embedding.value.map(_.toDouble), embedding)),
                                   input = query.value.map(_.toDouble),
-                                  k = 3,
+                                  k = topK,
                                 )
           // neighbor lookup window, like +/- 1 page
           fragmentsIndexRange =

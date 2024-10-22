@@ -3,11 +3,13 @@ package rag
 
 object Document:
   final case class Ingested(
-    documentId: DocumentId,
+    id: DocumentId,
+    name: DocumentName,
+    version: DocumentVersion,
     fragments: Vector[Fragment],
   )
 
   final case class Fragment(
-    index: Int,
+    index: Long,
     chunk: Chunk,
   )

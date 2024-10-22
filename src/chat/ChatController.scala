@@ -37,6 +37,7 @@ final class ChatController(
 
   private val chatId = UUID.fromString("f47ac10b-58cc-4372-a567-0e02b2c3d479")
 
+  // TODO: do not use xml tags in llama
   private def appPrompt(query: String, context: Option[String]) = Prompt(
     taskContext = "You are an expert Q&A system that is trusted around the world.".some,
     toneContext = "You should maintain a professional and friendly tone.".some,
@@ -59,7 +60,9 @@ final class ChatController(
   private def processQuery(query: ChatQuery, queryId: UUID, chatId: UUID): IO[Unit] =
     for
       queryEmbeddings     <- embeddingService.createQueryEmbeddings(Chunk(query.content, index = 0))
-      retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings).compile.toVector
+      retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings, RetrieveOptions(topK = 3)).compile.toVector
+
+      _ <- info"Retrieved embeddings: $retrievedEmbeddings"
 
       topicId = queryId.toString
 

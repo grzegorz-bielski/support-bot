@@ -44,6 +44,7 @@ import supportbot.rag.vectorstore.*
 import supportbot.chat.*
 import supportbot.home.*
 import supportbot.clickhouse.*
+import java.util.UUID
 
 object SupportBot extends ResourceApp.Forever:
   def run(args: List[String]): Resource[IO, Unit] =
@@ -57,7 +58,8 @@ object SupportBot extends ResourceApp.Forever:
                                              password = "default",
                                            ),
                                          )
-      _                               <- ClickHouseMigrator.migrate(
+      _                               <- ClickHouseMigrator
+                                           .migrate(
                                              ClickHouseMigrator.Config(
                                                databaseName = "default",
                                                fresh = true,
@@ -76,7 +78,7 @@ object SupportBot extends ResourceApp.Forever:
 
       // offline - parsing and indexing
       _                               <- createLocalPdfEmbeddings(
-                                           File("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
+                                           File("./content/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
                                          ).toResource
 
       chatController <- ChatController.of()
@@ -93,13 +95,10 @@ object SupportBot extends ResourceApp.Forever:
   def createLocalPdfEmbeddings(
     file: File,
   )(using vectorStore: VectorStoreRepository[IO], embeddingService: EmbeddingService[IO]) =
-    // TODO: make this user input
-    // val documentId      = file.getName
-    // val documentVersion = 1
-    val documentId = DocumentId(
-      name = file.getName,
-      version = 1,
-    )
+    // TODO: hardcoded
+    val documentId      = DocumentId(UUID.fromString("f47b3b3e-0b3b-4b3b-8b3b-3b3b3b3b3b3b"))
+    val documentName    = DocumentName(file.getName)
+    val documentVersion = DocumentVersion(1)
 
     vectorStore
       .documentEmbeddingsExists(documentId)
@@ -107,8 +106,15 @@ object SupportBot extends ResourceApp.Forever:
         IO.println(s"Embeddings for document $documentId already exists. Skipping the chunking and indexing."),
         for
           _               <- IO.println("Chunking PDF")
-          document        <- LocalPDFDocumentLoader.loadPDF(file, documentId)
+          fragments       <- LocalPDFDocumentLoader.loadPDF(file)
           _               <- IO.println(s"Creating embeddings. It may take a while...")
+          // documentId <- DocumentId.of
+          document         = Document.Ingested(
+                               id = documentId,
+                               name = documentName,
+                               version = documentVersion,
+                               fragments = fragments,
+                             )
           indexEmbeddings <- embeddingService.createIndexEmbeddings(document)
           _               <- IO.println(s"Created ${indexEmbeddings.size} embeddings.")
           _               <- vectorStore.store(indexEmbeddings)

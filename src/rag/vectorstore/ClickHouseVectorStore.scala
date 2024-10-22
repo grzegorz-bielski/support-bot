@@ -13,6 +13,7 @@ import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
 import unindent.*
 import java.util.Base64
+import java.util.UUID
 
 final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]) extends VectorStoreRepository[IO]:
   import ClickHouseVectorStore.*
@@ -36,7 +37,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
         val embeddings   = s"[${value.mkString(", ")}]"
         val encodedValue = s"'${base64TextEncode(chunk.text)}'"
 
-        s"('${documentId.name}', ${documentId.version}, $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
+        s"($documentId, $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
       .mkString(",\n")
 
     val insertQuery =
@@ -54,12 +55,9 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
         i"""
         SELECT
          EXISTS(
-          SELECT 
-           document_name, 
-           document_version 
+          SELECT document_id 
           FROM embeddings 
-          WHERE document_name = '${documentId.name}'
-          AND document_version = ${documentId.version}
+          WHERE document_id = toUUID('$documentId') 
           LIMIT 1
          )
         """.stripMargin
@@ -70,28 +68,26 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .flatMap: value =>
         info"Document $documentId exists: $value".as(value)
 
-  def retrieve(embedding: Embedding.Query): Stream[IO, Embedding.Retrieved] =
+  def retrieve(embedding: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
     client
       .streamQueryJson[ClickHouseRetrievedRow]:
         i"""
           WITH matched_embeddings AS (
             SELECT * FROM (
               SELECT 
-                document_name,
-                document_version, 
+                document_id,
                 fragment_index,
                 value,
                 metadata,
                 cosineDistance(embedding, [${embedding.value.mkString(", ")}]) AS score 
               FROM embeddings
               ORDER BY score ASC
-              LIMIT 3
+              LIMIT ${options.topK}
             ) 
-            LIMIT 1 BY document_name, document_version, fragment_index
+            LIMIT 1 BY document_id, fragment_index
           )
           SELECT 
-            document_name,
-            document_version,
+            document_id,
             fragment_index,
             chunk_index,
             base64Decode(ae.value) AS value,
@@ -99,18 +95,17 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
             score
           FROM matched_embeddings AS e
           INNER JOIN embeddings AS ae
-          ON ae.document_name = e.document_name
-          AND ae.document_version = e.document_version
+          ON ae.document_id = e.document_id
           AND
               ae.fragment_index = e.fragment_index OR
               ae.fragment_index = e.fragment_index - 1 OR
               ae.fragment_index = e.fragment_index + 1
-          ORDER BY document_name, document_version, fragment_index, chunk_index
+          ORDER BY toUInt128(document_id), fragment_index, chunk_index
           FORMAT JSONEachRow
         """
       .map: row =>
         Embedding.Retrieved(
-          documentId = DocumentId(name = row.document_name, version = row.document_version),
+          documentId = DocumentId(row.document_id),
           chunk = Chunk(text = row.value, index = row.chunk_index, metadata = row.metadata),
           value = embedding.value,
           fragmentIndex = row.fragment_index,
@@ -130,11 +125,11 @@ object ClickHouseVectorStore:
     yield ClickHouseVectorStore(client)
 
   private final case class ClickHouseRetrievedRow(
-    document_name: String,
-    document_version: Int,
-    fragment_index: Int,
-    chunk_index: Int,
+    document_id: UUID,
+    fragment_index: Long,
+    chunk_index: Long,
     value: String,
     metadata: Map[String, String],
     score: Double,
   ) derives ConfiguredJsonValueCodec
+

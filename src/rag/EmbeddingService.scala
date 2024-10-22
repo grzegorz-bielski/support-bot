@@ -35,7 +35,7 @@ final class SttpOpenAIEmbeddingService(model: Model)(using backend: SttpBackend,
             Embedding.Index(
               chunk = fragment.chunk,
               value = embeddingData.embeddingValues,
-              documentId = document.documentId,
+              documentId = document.id,
               fragmentIndex = fragment.index,
             )
 

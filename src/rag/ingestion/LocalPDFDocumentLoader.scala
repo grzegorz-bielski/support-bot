@@ -12,14 +12,14 @@ import smile.nlp.*
 import org.apache.pdfbox.text.*
 
 object LocalPDFDocumentLoader:
-  def loadPDF(file: File, documentId: DocumentId): IO[Document.Ingested] =
-    IO.blocking(fromPDFUnsafe(file, documentId))
+  def loadPDF(file: File): IO[Vector[Document.Fragment]] =
+    IO.blocking(fromPDFUnsafe(file))
 
-  private def fromPDFUnsafe(file: File, documentId: DocumentId): Document.Ingested =
+  private def fromPDFUnsafe(file: File): Vector[Document.Fragment] =
     val document = Loader.loadPDF(file)
 
     // 1 based index
-    val allFragments = (1 to document.getNumberOfPages)
+    (1 to document.getNumberOfPages)
       .foldLeft(Vector.newBuilder[Document.Fragment]): (builder, pageNr) =>
         // this has a couple of issues:
         // 1. it doesn't handle text that spans multiple pages
@@ -45,6 +45,4 @@ object LocalPDFDocumentLoader:
                 )
               )
       .result()
-
-    Document.Ingested(documentId = documentId, fragments = allFragments)
 
