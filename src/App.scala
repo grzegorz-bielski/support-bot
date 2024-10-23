@@ -18,7 +18,10 @@
 
 //> using dep com.github.haifengl::smile-scala:3.1.1
 
-//> using dep org.apache.pdfbox:pdfbox:3.0.3
+//> using dep dev.langchain4j:langchain4j:0.35.0
+//> using dep dev.langchain4j:langchain4j-document-parser-apache-tika:0.35.0
+
+///> using dep org.apache.pdfbox:pdfbox:3.0.3, langchain4j-document-parser-apache-tika uses different version
 
 //> using dep com.davegurnell::unindent:1.8.0
 
@@ -26,6 +29,7 @@
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.30.15
 
 //> using test.dep com.dimafeng::testcontainers-scala-munit::0.41.4
+
 
 package supportbot
 
@@ -69,11 +73,10 @@ object SupportBot extends ResourceApp.Forever:
       given VectorStoreRepository[IO] <- ClickHouseVectorStore.of.toResource
       given OpenAI                     = OpenAI("ollama", uri"http://localhost:11434/v1")
       given ChatService[IO]            = SttpOpenAIChatService(
-                                           model = Model("llama3.1"),
-                                           //  model = Model("llama3.1:8b-instruct-q4_0"),
+                                           model = Model.Llama31,
                                          )
       given EmbeddingService[IO]       = SttpOpenAIEmbeddingService(
-                                           model = Model("snowflake-arctic-embed"),
+                                           model = Model.SnowflakeArcticEmbed,
                                          )
 
       // offline - parsing and indexing
@@ -106,17 +109,39 @@ object SupportBot extends ResourceApp.Forever:
         IO.println(s"Embeddings for document $documentId already exists. Skipping the chunking and indexing."),
         for
           _               <- IO.println("Chunking PDF")
-          fragments       <- LocalPDFDocumentLoader.loadPDF(file)
-          _               <- IO.println(s"Creating embeddings. It may take a while...")
+          // fragments       <- LocalPDFDocumentLoader.loadPDF(file)
+          fragments      <- LocalLangChain4jIngestion.loadPDF(file.toPath, Model.SnowflakeArcticEmbed.contextLength)
+          fragmentsToEmbed = fragments
+          _               <- IO.println(s"Creating embeddings for ${fragmentsToEmbed.size} chunks. It may take a while...")
           // documentId <- DocumentId.of
+          // fragments = Vector(
+          //   Document.Fragment(
+          //     index = 0,
+          //     chunk = Chunk(
+          //       text = "Hello, world!",
+          //       index = 0,
+          //       metadata = Map.empty,
+          //     ),
+          //   ),
+          //   Document.Fragment(
+          //     index = 1,
+          //     chunk = Chunk(
+          //       text = "... and Hello, world!",
+          //       index = 1,
+          //       metadata =  Map.empty,
+          //     ),
+          //   ),
+          // )
+
           document         = Document.Ingested(
                                id = documentId,
                                name = documentName,
                                version = documentVersion,
-                               fragments = fragments,
+                               fragments = fragmentsToEmbed,
                              )
+          // _ <- IO.println(s"Fragments: $fragmentsToEmbed")
           indexEmbeddings <- embeddingService.createIndexEmbeddings(document)
           _               <- IO.println(s"Created ${indexEmbeddings.size} embeddings.")
-          _               <- vectorStore.store(indexEmbeddings)
+          // _               <- vectorStore.store(indexEmbeddings)
         yield (),
       )

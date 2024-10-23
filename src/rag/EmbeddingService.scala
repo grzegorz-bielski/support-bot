@@ -20,7 +20,7 @@ trait EmbeddingService[F[_]]:
 
 final class SttpOpenAIEmbeddingService(model: Model)(using backend: SttpBackend, openAIProtocol: OpenAI)
     extends EmbeddingService[IO]:
-  val embeddingModel = EmbeddingsModel.CustomEmbeddingsModel(model)
+  val embeddingModel = EmbeddingsModel.CustomEmbeddingsModel(model.name)
 
   def createIndexEmbeddings(document: Document.Ingested): IO[Vector[Embedding.Index]] =
     createEmbeddings(

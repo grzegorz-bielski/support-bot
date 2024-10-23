@@ -19,7 +19,7 @@ final class SttpOpenAIChatService(model: Model)(using
 ) extends ChatService[IO]:
   import SttpOpenAIChatService.*
 
-  private val chatModel = ChatCompletionModel.CustomChatCompletionModel(model)
+  private val chatModel = ChatCompletionModel.CustomChatCompletionModel(model.name)
 
   private val choicesAmount = 1
 
