@@ -28,28 +28,26 @@ object LocalLangChain4jIngestion:
       val documentParser = ApacheTikaDocumentParser()
       val document       = FileSystemDocumentLoader.loadDocument(path, documentParser)
 
-        val maxSegmentSizeInChars = maxTokens * minCharsPerToken
-        val maxOverlapSizeInChars = 1 * maxCharsPerToken
+      val maxSegmentSizeInChars = maxTokens * minCharsPerToken
+      val maxOverlapSizeInChars = 1 * maxCharsPerToken
 
-        val splitter = DocumentSplitters.recursive(
-          maxSegmentSizeInChars,
-          maxOverlapSizeInChars,
-        )
+      val splitter = DocumentSplitters.recursive(
+        maxSegmentSizeInChars,
+        maxOverlapSizeInChars,
+      )
 
       splitter
         .split(document)
         .asScala
         .toVector
         .mapWithIndex: (textSegment, i) =>
-          //   println("textSegment.text.length: " + textSegment.text.length)
-          //   println("textSegment.text: " + textSegment.text)
-
+          // there is no clear separation of fragments in the source document using langchain4j parsers, 
+          // so we set fragment_index = chunk_index and the chunk index to 0
           Document.Fragment(
-            index =
-              0, // afaik langchain4j `ApacheTikaDocumentParser` doesn't know about pages, so we treat as one humongous page / fragment
+            index = i,
             chunk = Chunk(
               text = textSegment.text,
-              index = i,
+              index = 0,
               metadata = Map.empty,
             ),
           )

@@ -37,7 +37,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
         val embeddings   = s"[${value.mkString(", ")}]"
         val encodedValue = s"'${base64TextEncode(chunk.text)}'"
 
-        s"($documentId, $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
+        s"(toUUID('$documentId'), $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
       .mkString(",\n")
 
     val insertQuery =
@@ -66,9 +66,24 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .map(_.trim.toInt)
       .map(_ == 1)
       .flatMap: value =>
-        info"Document $documentId exists: $value".as(value)
+        info"Document $documentId embedding exists: $value".as(value)
 
   def retrieve(embedding: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
+    // Workaround for the lack of support for inequality joins in CH
+    // `BETWEEN` and `IN` doesn't work with CH joins 
+    // and for inequality you need to turn on experimental settings: 
+    // https://clickhouse.com/docs/en/sql-reference/statements/select/join#experimental-join-with-inequality-conditions-for-columns-from-different-tables
+
+    val lookBackQueryFragment = 
+      (options.fragmentLookupRange.lookBack until 0 by -1).map: i => 
+        i"""ae.fragment_index = e.matched_fragment_index - $i OR"""
+      .mkString("\n")
+
+    val lookAheadQueryFragment = 
+      (1 to options.fragmentLookupRange.lookAhead).map: i => 
+        i"""ae.fragment_index = e.matched_fragment_index + $i OR"""
+      .mkString("\n")
+
     client
       .streamQueryJson[ClickHouseRetrievedRow]:
         i"""
@@ -76,31 +91,35 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
             SELECT * FROM (
               SELECT 
                 document_id,
-                fragment_index,
+                fragment_index as matched_fragment_index,
+                chunk_index as matched_chunk_index,
                 value,
                 metadata,
-                cosineDistance(embedding, [${embedding.value.mkString(", ")}]) AS score 
+                cosineDistance(embedding, [${embedding.value.mkString(", ")}]) AS score
               FROM embeddings
               ORDER BY score ASC
               LIMIT ${options.topK}
             ) 
-            LIMIT 1 BY document_id, fragment_index
+            LIMIT 1 BY document_id, matched_fragment_index
           )
           SELECT 
             document_id,
-            fragment_index,
-            chunk_index,
+            ae.fragment_index as fragment_index,
+            ae.chunk_index as chunk_index,
+            matched_fragment_index,
+            matched_chunk_index,
             base64Decode(ae.value) AS value,
-            metadata,
+            ae.metadata as metadata,
             score
           FROM matched_embeddings AS e
           INNER JOIN embeddings AS ae
           ON ae.document_id = e.document_id
           AND
-              ae.fragment_index = e.fragment_index OR
-              ae.fragment_index = e.fragment_index - 1 OR
-              ae.fragment_index = e.fragment_index + 1
+              $lookBackQueryFragment
+              $lookAheadQueryFragment
+              ae.fragment_index = e.matched_fragment_index
           ORDER BY toUInt128(document_id), fragment_index, chunk_index
+          LIMIT 1 BY document_id, fragment_index
           FORMAT JSONEachRow
         """
       .map: row =>

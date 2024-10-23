@@ -11,4 +11,7 @@ trait VectorStoreRepository[F[_]]:
 
 final case class RetrieveOptions(
   topK: Int,
+  fragmentLookupRange: LookupRange
 )
+
+final case class LookupRange(lookBack: Int, lookAhead: Int)

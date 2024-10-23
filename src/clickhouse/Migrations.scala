@@ -49,8 +49,8 @@ lazy val AllMigrations = Vector(
             CREATE TABLE IF NOT EXISTS embeddings
             (
                 document_id UUID,                                          -- unique identifier of the document
-                fragment_index Int64,                                      -- index of the fragment (like page) in the document
-                chunk_index Int64,                                         -- index of the chunk in the fragment
+                fragment_index Int64,                                      -- index of the fragment (like page) in the document, if there is no clear separation of fragments in source document, it will be equal to chunk_index
+                chunk_index Int64,                                         -- index of the chunk in the fragment, if there is no clear separation into fragments in source document, it will be always 0
                 value String,                                              -- base64 encoded value (likely just text) of the chunk, TODO: not base64 encode it so it's usable for full text search?
                 metadata Map(String, String),                              -- any additional metadata of the chunk
                 embedding Array(Float32),                                  -- embedding vector of the chunk

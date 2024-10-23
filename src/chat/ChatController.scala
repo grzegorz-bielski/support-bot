@@ -60,16 +60,22 @@ final class ChatController(
   private def processQuery(query: ChatQuery, queryId: UUID, chatId: UUID): IO[Unit] =
     for
       queryEmbeddings     <- embeddingService.createQueryEmbeddings(Chunk(query.content, index = 0))
-      retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings, RetrieveOptions(topK = 3)).compile.toVector
+      retrievedEmbeddings <- vectorStore.retrieve(
+        queryEmbeddings, 
+        RetrieveOptions(
+          topK = 15, 
+          fragmentLookupRange = LookupRange(5, 5)
+        ),
+      ).compile.toVector
 
-      _ <- info"Retrieved embeddings: $retrievedEmbeddings"
+      // _ <- info"Retrieved embeddings: $retrievedEmbeddings"
 
       topicId = queryId.toString
 
       // TODO: group retrieved embeddings by (documentId, version, fragmentIndex) and show them in chat
 
       contextChunks = retrievedEmbeddings.map(_.chunk)
-      _            <- debug"Retrieved context: ${contextChunks.map(_.toEmbeddingInput)}"
+      _            <- info"Retrieved context: ${contextChunks.map(_.toEmbeddingInput)}"
 
       finalPrompt = appPrompt(
                       query = query.content,

@@ -113,25 +113,6 @@ object SupportBot extends ResourceApp.Forever:
           fragments      <- LocalLangChain4jIngestion.loadPDF(file.toPath, Model.SnowflakeArcticEmbed.contextLength)
           fragmentsToEmbed = fragments
           _               <- IO.println(s"Creating embeddings for ${fragmentsToEmbed.size} chunks. It may take a while...")
-          // documentId <- DocumentId.of
-          // fragments = Vector(
-          //   Document.Fragment(
-          //     index = 0,
-          //     chunk = Chunk(
-          //       text = "Hello, world!",
-          //       index = 0,
-          //       metadata = Map.empty,
-          //     ),
-          //   ),
-          //   Document.Fragment(
-          //     index = 1,
-          //     chunk = Chunk(
-          //       text = "... and Hello, world!",
-          //       index = 1,
-          //       metadata =  Map.empty,
-          //     ),
-          //   ),
-          // )
 
           document         = Document.Ingested(
                                id = documentId,
@@ -142,6 +123,6 @@ object SupportBot extends ResourceApp.Forever:
           // _ <- IO.println(s"Fragments: $fragmentsToEmbed")
           indexEmbeddings <- embeddingService.createIndexEmbeddings(document)
           _               <- IO.println(s"Created ${indexEmbeddings.size} embeddings.")
-          // _               <- vectorStore.store(indexEmbeddings)
+          _               <- vectorStore.store(indexEmbeddings)
         yield (),
       )
