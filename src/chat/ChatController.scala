@@ -12,11 +12,12 @@ import org.typelevel.log4cats.*
 import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
 import scala.concurrent.duration.{span as _, *}
-
-import rag.vectorstore.*
-import rag.*
 import java.util.UUID
 import org.http4s.dsl.impl.QueryParamDecoderMatcher
+
+import supportbot.context.*
+import supportbot.rag.vectorstore.*
+import supportbot.rag.*
 
 final class ChatController(
   pubSub: PubSub[IO],

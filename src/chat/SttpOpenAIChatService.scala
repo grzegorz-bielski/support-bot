@@ -13,6 +13,8 @@ import sttp.openai.OpenAIExceptions.OpenAIException
 import sttp.openai.requests.completions.chat.ChatRequestBody.{ChatBody, ChatCompletionModel}
 import sttp.openai.requests.completions.chat.message.*
 
+import supportbot.context.*
+
 final class SttpOpenAIChatService(model: Model)(using
   backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   openAIProtocol: OpenAI,
@@ -34,7 +36,7 @@ final class SttpOpenAIChatService(model: Model)(using
       .flatten
       .map: response =>
         new ChatChunkResponse:
-          def contentDeltas: String = 
+          def contentDeltas: String =
             // assuming only one choice (configured by `choicesAmount`)
             response.choices.headOption.flatMap(_.delta.content).getOrElse("")
 
@@ -68,8 +70,8 @@ object SttpOpenAIChatService:
     )
 
     val examplesMessages = prompt.examples.map:
-      case ("User", text)      => Message.UserMessage(Content.TextContent(text))
-      case ("Assistant", text) => Message.AssistantMessage(text)
+      case Example.User(text)      => Message.UserMessage(Content.TextContent(text))
+      case Example.Assistant(text) => Message.AssistantMessage(text)
 
     val userMessage = Message.UserMessage(
       content = Content.TextContent(

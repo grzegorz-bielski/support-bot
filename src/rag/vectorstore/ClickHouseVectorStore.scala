@@ -5,7 +5,6 @@ package vectorstore
 import cats.effect.*
 import cats.syntax.all.*
 import fs2.{Chunk as _, *}
-import supportbot.clickhouse.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.*
 import org.typelevel.log4cats.*
@@ -14,6 +13,8 @@ import org.typelevel.log4cats.syntax.*
 import unindent.*
 import java.util.Base64
 import java.util.UUID
+
+import supportbot.clickhouse.*
 
 final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]) extends VectorStoreRepository[IO]:
   import ClickHouseVectorStore.*
@@ -33,7 +34,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .map: embedding =>
         import embedding.*
 
-        val metadata     = s"{${chunk.metadata.toVector.map((k, v) => s"'$k':'$v'").mkString(", ")}}"
+        val metadata     = chunk.metadata.toClickHouseMap
         val embeddings   = s"[${value.mkString(", ")}]"
         val encodedValue = s"'${base64TextEncode(chunk.text)}'"
 
@@ -42,7 +43,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
 
     val insertQuery =
       i"""
-      INSERT INTO embeddings (*) VALUES
+      INSERT INTO embeddings (document_id, fragment_index, chunk_index, value, metadata, embedding) VALUES
       ${values}
       """
 
@@ -70,19 +71,21 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
 
   def retrieve(embedding: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
     // Workaround for the lack of support for inequality joins in CH
-    // `BETWEEN` and `IN` doesn't work with CH joins 
-    // and for inequality you need to turn on experimental settings: 
+    // `BETWEEN` and `IN` doesn't work with CH joins
+    // and for inequality you need to turn on experimental settings:
     // https://clickhouse.com/docs/en/sql-reference/statements/select/join#experimental-join-with-inequality-conditions-for-columns-from-different-tables
 
-    val lookBackQueryFragment = 
-      (options.fragmentLookupRange.lookBack until 0 by -1).map: i => 
-        i"""ae.fragment_index = e.matched_fragment_index - $i OR"""
-      .mkString("\n")
+    val lookBackQueryFragment =
+      (options.fragmentLookupRange.lookBack until 0 by -1)
+        .map: i =>
+          i"""ae.fragment_index = e.matched_fragment_index - $i OR"""
+        .mkString("\n")
 
-    val lookAheadQueryFragment = 
-      (1 to options.fragmentLookupRange.lookAhead).map: i => 
-        i"""ae.fragment_index = e.matched_fragment_index + $i OR"""
-      .mkString("\n")
+    val lookAheadQueryFragment =
+      (1 to options.fragmentLookupRange.lookAhead)
+        .map: i =>
+          i"""ae.fragment_index = e.matched_fragment_index + $i OR"""
+        .mkString("\n")
 
     client
       .streamQueryJson[ClickHouseRetrievedRow]:
@@ -151,4 +154,3 @@ object ClickHouseVectorStore:
     metadata: Map[String, String],
     score: Double,
   ) derives ConfiguredJsonValueCodec
-

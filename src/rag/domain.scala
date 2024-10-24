@@ -2,19 +2,27 @@ package supportbot
 
 import java.util.UUID
 import cats.effect.IO
+import com.github.plokhotnyuk.jsoniter_scala.core.*
+import com.github.plokhotnyuk.jsoniter_scala.macros.*
 
 opaque type DocumentName <: String = String
 object DocumentName:
   inline def apply(value: String): DocumentName = value
 
+  given JsonValueCodec[DocumentName] = JsonCodecMaker.make
+
 opaque type DocumentVersion <: Int = Int
 object DocumentVersion:
   inline def apply(value: Int): DocumentVersion = value
+
+  given JsonValueCodec[DocumentVersion] = JsonCodecMaker.make
 
 opaque type DocumentId = UUID
 object DocumentId:
   inline def apply(value: UUID): DocumentId = value
   def of: IO[DocumentId]                    = IO.randomUUID
+
+  given JsonValueCodec[DocumentId] = JsonCodecMaker.make
 
 final case class Chunk(
   text: String,

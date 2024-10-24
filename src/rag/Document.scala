@@ -1,12 +1,22 @@
 package supportbot
 package rag
 
+import supportbot.context.*
+
 object Document:
   final case class Ingested(
+    info: Info,
+    fragments: Vector[Fragment],
+  )
+
+  final case class Info(
     id: DocumentId,
+    contextId: ContextId,
     name: DocumentName,
     version: DocumentVersion,
-    fragments: Vector[Fragment],
+    description: String,
+    `type`: String,
+    metadata: Map[String, String],
   )
 
   final case class Fragment(
