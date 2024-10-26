@@ -42,21 +42,21 @@ object RootLayoutView extends HtmxView:
     div(
       cls := "navbar bg-base-100",
       div(cls := "flex-1", appLink("/", "SupportBot", cls := "btn btn-ghost text-xl")),
-      div(
-        cls   := "flex-none",
-        ul(
-          cls := "menu menu-horizontal px-1",
-          li(
-            details(
-              summary("Context"),
-              ul(
-                cls := "bg-base-100 rounded-t-none p-2",
-                li(
-                  appLink("/chat", "Safe3"),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+      // div(
+      //   cls   := "flex-none",
+      //   ul(
+      //     cls := "menu menu-horizontal px-1",
+      //     li(
+      //       details(
+      //         summary("Context"),
+      //         ul(
+      //           cls := "bg-base-100 rounded-t-none p-2",
+      //           li(
+      //             appLink("/chat", "context xy"),
+      //           ),
+      //         ),
+      //       ),
+      //     ),
+      //   ),
+      // ),
     )

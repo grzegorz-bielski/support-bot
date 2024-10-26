@@ -1,12 +1,11 @@
 package supportbot
+package context
 package chat
-
-import supportbot.context.*
 
 import cats.syntax.all.*
 import fs2.Stream
 
-trait ChatService[F[_]]:
+trait ChatCompletionService[F[_]]:
   def chatCompletion(prompt: Prompt): Stream[F, ChatChunkResponse]
 
 trait ChatChunkResponse:

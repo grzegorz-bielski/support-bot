@@ -13,12 +13,33 @@ import unindent.*
 import java.util.UUID
 import java.time.*
 import io.scalaland.chimney.dsl.*
+import scala.util.Try
 
 import supportbot.clickhouse.*
 
 import ClickHouseContextRepository.*
 
 final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logger[IO]) extends ContextRepository[IO]:
+  def get(id: ContextId): IO[Option[ContextInfo]] =
+    client
+      .streamQueryJson[ContextInfoRetrievedRow]:
+        i"""
+        SELECT 
+          id, 
+          name, 
+          description, 
+          prompt, 
+          chat_model, 
+          embeddings_model
+        FROM contexts 
+        WHERE id = toUUID('$id')
+        FORMAT JSONEachRow
+        """
+      .evalMap: row => 
+        IO.fromEither(row.asContextInfo)
+      .compile
+      .last
+
   def getAll: IO[Vector[ContextInfo]] =
     client
       .streamQueryJson[ContextInfoRetrievedRow]:
@@ -33,7 +54,8 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
         FROM contexts 
         FORMAT JSONEachRow
         """
-      .map(_.asContextInfo)
+      .evalMap: row => 
+        IO.fromEither(row.asContextInfo)
       .compile
       .toVector
 
@@ -91,12 +113,17 @@ object ClickHouseContextRepository:
     id: ContextId,
     name: String,
     description: String,
-    prompt: Prompt,
-    chat_model: Model,
-    embeddings_model: Model,
+    prompt: String,
+    chat_model: String,
+    embeddings_model: String,
   ) derives ConfiguredJsonValueCodec:
-    def asContextInfo: ContextInfo =
-      this.into[ContextInfo]
-        .withFieldRenamed(_.chat_model, _.chatModel)
-        .withFieldRenamed(_.embeddings_model, _.embeddingsModel)
-        .transform
+    def asContextInfo: Either[Throwable, ContextInfo] =
+      Try:
+        this.into[ContextInfo]
+          .withFieldRenamed(_.chat_model, _.chatModel)
+          .withFieldRenamed(_.embeddings_model, _.embeddingsModel)
+          .withFieldConst(_.prompt, readFromString[Prompt](prompt))
+          .withFieldConst(_.chatModel, readFromString[Model](chat_model))
+          .withFieldConst(_.embeddingsModel, readFromString[Model](embeddings_model))
+          .transform
+      .toEither

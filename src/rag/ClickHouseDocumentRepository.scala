@@ -30,8 +30,7 @@ final class ClickHouseDocumentRepository(client: ClickHouseClient[IO])(using Log
           name, 
           description, 
           version, 
-          type, 
-          embeddings_model, 
+          type,
           metadata
         FROM documents 
         FORMAT JSONEachRow

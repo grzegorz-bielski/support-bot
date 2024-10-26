@@ -1,4 +1,5 @@
 package supportbot
+package context
 package chat
 
 import cats.syntax.all.*
@@ -13,13 +14,11 @@ import sttp.openai.OpenAIExceptions.OpenAIException
 import sttp.openai.requests.completions.chat.ChatRequestBody.{ChatBody, ChatCompletionModel}
 import sttp.openai.requests.completions.chat.message.*
 
-import supportbot.context.*
-
-final class SttpOpenAIChatService(model: Model)(using
+final class SttpOpenAIChatCompletionService(model: Model)(using
   backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   openAIProtocol: OpenAI,
-) extends ChatService[IO]:
-  import SttpOpenAIChatService.*
+) extends ChatCompletionService[IO]:
+  import SttpOpenAIChatCompletionService.*
 
   private val chatModel = ChatCompletionModel.CustomChatCompletionModel(model.name)
 
@@ -59,7 +58,7 @@ final class SttpOpenAIChatService(model: Model)(using
       ),
     )
 
-object SttpOpenAIChatService:
+object SttpOpenAIChatCompletionService:
   private def bodyMessages(prompt: Prompt): Vector[Message] =
     val systemMessage = Message.SystemMessage(
       content = Vector(

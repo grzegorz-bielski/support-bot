@@ -6,13 +6,18 @@ import cats.effect.*
 import cats.syntax.all.*
 import scalatags.Text.all.*
 import scalatags.Text.TypedTag
+import org.http4s.headers.Location
+import org.http4s.implicits.*
 
-object HomeController extends HtmxController:
+object HomeController extends TopLevelHtmxController:
   def prefix = "/"
   def routes = IO:
     HttpRoutes.of[IO]:
       case GET -> Root =>
-        Ok(HomeView.view())
+        Response[IO]()
+          .withStatus(Status.Found)
+          .withHeaders(Location(uri"/contexts"))
+          .pure[IO]
 
 object HomeView extends HtmxView:
   def view() =

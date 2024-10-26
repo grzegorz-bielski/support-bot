@@ -20,7 +20,7 @@ import org.typelevel.log4cats.syntax.*
 def httpApp(
   host: Host = ipv4"0.0.0.0",
   port: Port = port"8080",
-  controllers: Vector[Controller],
+  controllers: Vector[TopLevelController],
 ): Resource[IO, Server] =
   val app = for
     given Logger[IO] <- Slf4jLogger.create[IO]
@@ -38,7 +38,7 @@ def httpApp(
       .withHttpApp(_)
       .build
 
-final class StaticAssetsController(using Logger[IO]) extends Controller:
+final class StaticAssetsController(using Logger[IO]) extends TopLevelController:
   def prefix = "static"
   def routes = Env[IO]
     .get("ENV")

@@ -1,8 +1,5 @@
 package supportbot
 
-import com.github.plokhotnyuk.jsoniter_scala.core.*
-import com.github.plokhotnyuk.jsoniter_scala.macros.*
-
 /** Represents a LLM model
   *
   * @param name
@@ -12,10 +9,9 @@ import com.github.plokhotnyuk.jsoniter_scala.macros.*
   *   The context length of the model. This is the maximum number of tokens that the model can process in a single
   *   request.
   */
-enum Model(val name: String, val contextLength: Int) derives ConfiguredJsonValueCodec:
+enum Model(val name: String, val contextLength: Int):
   case Llama31              extends Model("llama3.1", 131072)
   case SnowflakeArcticEmbed extends Model("snowflake-arctic-embed", 512)
 
-// object Model:
-//   def fromString(str: String): Either[String, Model] =
-//     Model.values.find(_.name == str).toRight(s"Unknown model: $str")
+object Model:
+  export ModelCodecs.given
