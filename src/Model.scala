@@ -15,3 +15,6 @@ enum Model(val name: String, val contextLength: Int):
 
 object Model:
   export ModelCodecs.given
+
+  lazy val defaultChatModel       = Model.Llama31
+  lazy val defaultEmbeddingsModel = Model.SnowflakeArcticEmbed

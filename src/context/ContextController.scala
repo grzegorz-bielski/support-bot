@@ -13,9 +13,11 @@ import org.typelevel.log4cats.syntax.*
 import scala.concurrent.duration.{span as _, *}
 import java.util.UUID
 import org.http4s.dsl.impl.QueryParamDecoderMatcher
+import org.http4s.implicits.*
+import org.http4s.headers.Location
 
 import context.chat.*
-// import supportbot.rag.vectorstore.VectorStoreRepository
+import supportbot.rag.vectorstore.{VectorStoreRepository, RetrieveOptions, LookupRange}
 import supportbot.rag.DocumentRepository
 
 final class ContextController(using
@@ -34,6 +36,16 @@ final class ContextController(using
         for
           contexts <- contextRepository.getAll
           response <- Ok(ContextView.contextsOverview(contexts))
+        yield response
+
+      case GET -> Root / "new" =>
+        for
+          context <- ContextInfo.default
+          _       <- contextRepository.createOrUpdate(context)
+          response = Response[IO]()
+                       .withStatus(Status.SeeOther)
+                       .withHeaders(Location(Uri.unsafeFromString(s"/$prefix/${context.id}")))
+                      //  .withHeaders(Location(uri"/$prefix/${context.id.toString}")) -- implementation is missing ??
         yield response
 
       case GET -> Root / ContextIdVar(contextId) =>
@@ -62,7 +74,15 @@ final class ContextController(using
             queryId <- QueryId.of
             _       <- info"Received query: $query"
             // TODO: use .background / Resource and maybe queue requests
-            _       <- chatService.processQuery(query, queryId).start
+            _       <-  chatService.processQuery(
+                          query = query, 
+                          queryId = queryId,
+                          promptTemplate = context.promptTemplate,
+                          retrieveOptions = RetrieveOptions(
+                            topK = 15, 
+                            fragmentLookupRange = LookupRange(5, 5)
+                          ),
+                        ).start
             res     <-
               Ok(
                 ChatView.responseMessage(
@@ -119,10 +139,38 @@ object ContextView extends HtmxView:
   def contextsOverview(contexts: Vector[ContextInfo]) =
     RootLayoutView.view(
       div(
-        h2("Contexts"),
-        ul(
-          contexts.map: context =>
-            li(appLink(s"/contexts/${context.id}", context.name)),
+        div(
+          cls := "flex justify-between items-center",
+          h2(
+            cls := "text-2xl p-5",
+            "Your contexts",
+          ),
+          div(
+            appLink(
+              "/contexts/new",
+              cls := "btn btn-primary",
+              "Create new",
+            ),
+          ),
+        ),
+        div(
+          ul(
+            cls := "grid grid-cols-1 md:grid-cols-3 gap-4",
+            contexts.map: context =>
+              li(
+                appLink(
+                  s"/contexts/${context.id}",
+                  div(
+                    cls := "card bg-base-200 shadow-lg shadow-lg hover:shadow-xl transition-shadow",
+                    div(
+                      cls := "card-body",
+                      h2(cls := "card-title", context.name),
+                      p(context.description),
+                    ),
+                  ),
+                ),
+              ),
+          ),
         ),
       ),
     )

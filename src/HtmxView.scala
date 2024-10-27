@@ -18,10 +18,10 @@ trait HtmxView:
   lazy val `sse-swap`: HtmxAttr    = attr("sse-swap")
   lazy val `sse-close`: HtmxAttr   = attr("sse-close")
 
-  def appLink(path: String, text: String, attrs: Modifier*): TypedTag[String] =
+  def appLink(path: String, child: Modifier, attrs: Modifier*): TypedTag[String] =
     val allAttrs = Seq(
       attr("href") := path,
       `hx-boost`   := "true",
     ) ++ attrs
 
-    a(allAttrs*)(text)
+    a(allAttrs*)(child)

@@ -28,7 +28,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
           id, 
           name, 
           description, 
-          prompt, 
+          prompt_template, 
           chat_model, 
           embeddings_model
         FROM contexts 
@@ -48,7 +48,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
           id, 
           name, 
           description, 
-          prompt, 
+          prompt_template, 
           chat_model, 
           embeddings_model
         FROM contexts 
@@ -60,6 +60,8 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
       .toVector
 
   override def createOrUpdate(info: ContextInfo): IO[Unit] =
+    val writerConfig = WriterConfig.withEscapeUnicode(true)
+
     // should be merged by ReplacingMergeTree on sorting key duplicates, but not at once
     client.executeQuery:
       i"""
@@ -67,17 +69,17 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
         id,
         name, 
         description, 
-        prompt,
+        prompt_template,
         chat_model,
         embeddings_model
       ) 
       VALUES (
-        toUUID('${info.id}'),
-        '${info.name}',
-        '${info.description}', 
-        '${writeToString(info.prompt)}',
-        '${writeToString(info.chatModel)}',
-        '${writeToString(info.embeddingsModel)}'
+        toUUID(${info.id.toString.toClickHouseString}),
+        ${info.name.toClickHouseString},
+        ${info.description.toClickHouseString}, 
+        ${writeToString(info.promptTemplate, writerConfig).toClickHouseString},
+        ${writeToString(info.chatModel, writerConfig).toClickHouseString},
+        ${writeToString(info.embeddingsModel, writerConfig).toClickHouseString}
       )
       """
       // TODO: do not stringify the values, encode to String, or use new JSON type
@@ -113,17 +115,18 @@ object ClickHouseContextRepository:
     id: ContextId,
     name: String,
     description: String,
-    prompt: String,
+    prompt_template: String,
     chat_model: String,
     embeddings_model: String,
   ) derives ConfiguredJsonValueCodec:
     def asContextInfo: Either[Throwable, ContextInfo] =
       Try:
-        this.into[ContextInfo]
-          .withFieldRenamed(_.chat_model, _.chatModel)
-          .withFieldRenamed(_.embeddings_model, _.embeddingsModel)
-          .withFieldConst(_.prompt, readFromString[Prompt](prompt))
-          .withFieldConst(_.chatModel, readFromString[Model](chat_model))
-          .withFieldConst(_.embeddingsModel, readFromString[Model](embeddings_model))
-          .transform
+        ContextInfo(
+          id = id,
+          name = name,
+          description = description,
+          promptTemplate = readFromString[PromptTemplate](prompt_template),
+          chatModel = readFromString[Model](chat_model),
+          embeddingsModel = readFromString[Model](embeddings_model),
+        )
       .toEither

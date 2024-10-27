@@ -18,7 +18,7 @@ object HomeController extends TopLevelHtmxController:
           .withStatus(Status.Found)
           .withHeaders(Location(uri"/contexts"))
           .pure[IO]
-
+          
 object HomeView extends HtmxView:
   def view() =
     RootLayoutView.view(

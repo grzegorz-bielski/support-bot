@@ -15,7 +15,6 @@ import java.time.*
 import io.scalaland.chimney.dsl.*
 
 import supportbot.clickhouse.*
-import supportbot.context.*
 
 import ClickHouseDocumentRepository.*
 

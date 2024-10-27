@@ -4,6 +4,9 @@ app-dev:
     export ENV=local
     (trap 'kill 0' SIGINT; scala-cli run ./ --restart & npm --prefix ./ run tailwind:watch)
 
+app-clean:
+    scala-cli clean ./
+
 test:
     #!/usr/bin/env bash
     echo "Running tests"

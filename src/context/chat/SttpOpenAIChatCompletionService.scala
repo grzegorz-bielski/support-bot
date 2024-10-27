@@ -60,29 +60,19 @@ final class SttpOpenAIChatCompletionService(model: Model)(using
 
 object SttpOpenAIChatCompletionService:
   private def bodyMessages(prompt: Prompt): Vector[Message] =
-    val systemMessage = Message.SystemMessage(
-      content = Vector(
-        prompt.taskContext,
-        prompt.toneContext,
-        prompt.taskDescription,
-      ).map(_.getOrElse("")).mkString("\n"),
-    )
+    val renderedPrompt = prompt.render  
 
-    val examplesMessages = prompt.examples.map:
+    val systemMessage = 
+      renderedPrompt.system.map(text => Message.SystemMessage(text)).toVector
+
+    val examplesMessages = renderedPrompt.examples.map:
       case Example.User(text)      => Message.UserMessage(Content.TextContent(text))
       case Example.Assistant(text) => Message.AssistantMessage(text)
 
     val userMessage = Message.UserMessage(
-      content = Content.TextContent(
-        Vector(
-          prompt.queryContext,
-          prompt.query.some,
-          prompt.precognition,
-          prompt.outputFormatting,
-        ).map(_.getOrElse("")).mkString("\n"),
-      ),
+      content = Content.TextContent(renderedPrompt.user),
     )
 
-    val prefill = prompt.prefill.map(text => Message.AssistantMessage(text)).toVector
+    val assistant = renderedPrompt.assistant.map(text => Message.AssistantMessage(text)).toVector
 
-    (systemMessage +: examplesMessages :+ userMessage) ++ prefill
+    (systemMessage ++ examplesMessages :+ userMessage) ++ assistant

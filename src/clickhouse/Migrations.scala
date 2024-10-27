@@ -13,7 +13,7 @@ lazy val AllMigrations = Vector(
                 id UUID,                            -- unique identifier of the context
                 name String,                        -- name of the context
                 description String,                 -- description of the context
-                prompt String,                      -- a stringified JSON of the prompt, TODO: move the new JSON type once it's available?
+                prompt_template String,             -- a stringified JSON of the prompt template, TODO: move the new JSON type once it's available?
                 chat_model String,                  -- name of the chat model
                 embeddings_model String,            -- name of the embeddings model
                 updated_at DateTime DEFAULT now()

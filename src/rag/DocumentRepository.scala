@@ -1,8 +1,6 @@
 package supportbot
 package rag
 
-import supportbot.context.*
-
 import java.util.UUID
 
 trait DocumentRepository[F[_]]:

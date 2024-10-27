@@ -129,9 +129,7 @@ object SupportBot extends ResourceApp.Forever:
                    id = contextId,
                    name = "Support",
                    description = "Support context",
-                   prompt = Prompt(
-                     query = "I need help with...",
-                   ),
+                   promptTemplate = PromptTemplate.default,
                    chatModel = Model.Llama31,
                    embeddingsModel = Model.SnowflakeArcticEmbed,
                  ),
