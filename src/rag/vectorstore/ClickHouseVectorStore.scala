@@ -69,6 +69,8 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .flatMap: value =>
         info"Document $documentId embedding exists: $value".as(value)
 
+  // TODO: query by all documents in the context??
+
   def retrieve(embedding: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
     // Workaround for the lack of support for inequality joins in CH
     // `BETWEEN` and `IN` doesn't work with CH joins

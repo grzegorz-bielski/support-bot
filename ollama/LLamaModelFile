@@ -1,0 +1,3 @@
+FROM llama3.1:8b
+# max is 131072, but it uses around 31 GBs of RAM. This cannot be set through OpenAI compatible API
+PARAMETER num_ctx 31072

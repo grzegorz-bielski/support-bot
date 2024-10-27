@@ -10,7 +10,8 @@ package supportbot
   *   request.
   */
 enum Model(val name: String, val contextLength: Int):
-  case Llama31              extends Model("llama3.1", 131072)
+  // `contextLength` defined by `num_ctx` in Modelfile. Cannot be set in ollama through OpenAI API
+  case Llama31              extends Model("support-bot-llama", 31072)
   case SnowflakeArcticEmbed extends Model("snowflake-arctic-embed", 512)
 
 object Model:

@@ -16,27 +16,32 @@ import scalatags.Text.TypedTag
 import org.typelevel.log4cats.*
 import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
+import scala.util.control.NonFatal
 
 def httpApp(
   host: Host = ipv4"0.0.0.0",
-  port: Port = port"8080",
+  port: Port = port"8081",
   controllers: Vector[TopLevelController],
 ): Resource[IO, Server] =
-  val app = for
-    given Logger[IO] <- Slf4jLogger.create[IO]
-    _                <- info"Starting the server at $host:$port"
+  for
+    given Logger[IO] <- Slf4jLogger.create[IO].toResource
+    _                <- info"Starting the server at $host:$port".toResource
     mappings         <- controllers
                           .appended(StaticAssetsController())
                           .traverse(_.mapping)
-  yield Router(mappings*).orNotFound
+                          .toResource
+    app               = Router(mappings*).orNotFound
+    server           <- EmberServerBuilder
+                          .default[IO]
+                          .withHost(host)
+                          .withPort(port)
+                          .withHttpApp(app)
+                          .withErrorHandler(errorHandler)
+                          .build
+  yield server
 
-  app.toResource.flatMap:
-    EmberServerBuilder
-      .default[IO]
-      .withHost(host)
-      .withPort(port)
-      .withHttpApp(_)
-      .build
+def errorHandler: Logger[IO] ?=> PartialFunction[Throwable, IO[Response[IO]]] =
+  err => Logger[IO].error(err)("An error occurred").as(Response[IO](Status.InternalServerError))
 
 final class StaticAssetsController(using Logger[IO]) extends TopLevelController:
   def prefix = "static"

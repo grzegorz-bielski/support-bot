@@ -31,7 +31,8 @@ final class ClickHouseDocumentRepository(client: ClickHouseClient[IO])(using Log
           version, 
           type,
           metadata
-        FROM documents 
+        FROM documents
+        WHERE context_id = toUUID('$contextId') 
         FORMAT JSONEachRow
         """
       .map(_.asDocumentInfo)

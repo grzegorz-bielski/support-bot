@@ -45,12 +45,21 @@ final class ContextController(using
           response = Response[IO]()
                        .withStatus(Status.SeeOther)
                        .withHeaders(Location(Uri.unsafeFromString(s"/$prefix/${context.id}")))
-                      //  .withHeaders(Location(uri"/$prefix/${context.id.toString}")) -- implementation is missing ??
+        //  .withHeaders(Location(uri"/$prefix/${context.id.toString}")) -- implementation is missing ??
         yield response
 
       case GET -> Root / ContextIdVar(contextId) =>
         getContextOrNotFound(contextId): context =>
-          Ok(ContextView.view(context, postUrl = s"/$prefix/${context.id}/chat/query"))
+          for
+            documents <- documentRepository.getAll(context.id)
+            response  <- Ok(
+                           ContextView.view(
+                             context = context,
+                             postUrl = s"/$prefix/${context.id}/chat/query",
+                             documents = documents,
+                           ),
+                         )
+          yield response
 
       case GET -> Root / ContextIdVar(contextId) / "chat" / "responses" :? QueryIdMatcher(queryId) =>
         getContextOrNotFound(contextId): context =>
@@ -74,15 +83,17 @@ final class ContextController(using
             queryId <- QueryId.of
             _       <- info"Received query: $query"
             // TODO: use .background / Resource and maybe queue requests
-            _       <-  chatService.processQuery(
-                          query = query, 
-                          queryId = queryId,
-                          promptTemplate = context.promptTemplate,
-                          retrieveOptions = RetrieveOptions(
-                            topK = 15, 
-                            fragmentLookupRange = LookupRange(5, 5)
-                          ),
-                        ).start
+            _       <- chatService
+                         .processQuery(
+                           query = query,
+                           queryId = queryId,
+                           promptTemplate = context.promptTemplate,
+                           retrieveOptions = RetrieveOptions(
+                             topK = 15,
+                             fragmentLookupRange = LookupRange(5, 5),
+                           ),
+                         )
+                         .start
             res     <-
               Ok(
                 ChatView.responseMessage(
@@ -126,103 +137,3 @@ object ContextController:
     def unapply(str: String): Option[ContextId] =
       if str.isEmpty then None
       else scala.util.Try(UUID.fromString(str)).toOption.map(ContextId.apply)
-
-object ContextView extends HtmxView:
-  def view(context: ContextInfo, postUrl: String) = RootLayoutView.view(
-    div(
-      configMenu(),
-      ChatView.messages(),
-      ChatView.chatForm(postUrl),
-    ),
-  )
-
-  def contextsOverview(contexts: Vector[ContextInfo]) =
-    RootLayoutView.view(
-      div(
-        div(
-          cls := "flex justify-between items-center",
-          h2(
-            cls := "text-2xl p-5",
-            "Your contexts",
-          ),
-          div(
-            appLink(
-              "/contexts/new",
-              cls := "btn btn-primary",
-              "Create new",
-            ),
-          ),
-        ),
-        div(
-          ul(
-            cls := "grid grid-cols-1 md:grid-cols-3 gap-4",
-            contexts.map: context =>
-              li(
-                appLink(
-                  s"/contexts/${context.id}",
-                  div(
-                    cls := "card bg-base-200 shadow-lg shadow-lg hover:shadow-xl transition-shadow",
-                    div(
-                      cls := "card-body",
-                      h2(cls := "card-title", context.name),
-                      p(context.description),
-                    ),
-                  ),
-                ),
-              ),
-          ),
-        ),
-      ),
-    )
-
-  def configMenu() =
-    // TODO: get documents from the database
-    val documents = Vector(
-      "SAFE3 - Support Guide-v108-20240809_102738.pdf",
-    )
-
-    div(
-      cls := "py-4",
-      div(
-        tabindex := "0",
-        cls      := "collapse collapse-open border-base-300 bg-base-200 border",
-        div(cls := "collapse-title text-xl font-medium", "Knowledge Base"),
-        div(
-          cls   := "collapse-content",
-          div(
-            h3("Files"),
-            ul(
-              cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s",
-              documents.map: document =>
-                li(
-                  a(
-                    documentIcon(),
-                    document,
-                  ),
-                ),
-            ),
-            form(
-              input(`type` := "file", cls := "file-input file-input-sm w-full max-w-xs"),
-            ),
-          ),
-        ),
-      ),
-    )
-
-  def documentIcon() =
-    import scalatags.Text.svgTags.{attr as _, *}
-    import scalatags.Text.svgAttrs.*
-
-    svg(
-      xmlns                := "http://www.w3.org/2000/svg",
-      fill                 := "none",
-      viewBox              := "0 0 24 24",
-      attr("stroke-width") := "1.5",
-      stroke               := "currentColor",
-      cls                  := "h-4 w-4",
-      path(
-        attr("stroke-linecap")  := "round",
-        attr("stroke-linejoin") := "round",
-        d                       := "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z",
-      ),
-    )

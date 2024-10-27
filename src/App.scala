@@ -3,8 +3,8 @@
 //> using dep org.typelevel::kittens::3.4.0
 //> using dep org.typelevel::log4cats-slf4j:2.7.0
 
-//> using dep com.outr::scribe-slf4j2:3.15.1
-//> using dep com.outr::scribe-file:3.15.1
+//> using dep com.outr::scribe-slf4j2:3.15.2
+//> using dep com.outr::scribe-file:3.15.2
 
 //> using dep org.http4s::http4s-dsl::0.23.29
 //> using dep org.http4s::http4s-ember-server::0.23.29
