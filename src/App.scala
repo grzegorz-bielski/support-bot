@@ -1,20 +1,36 @@
 //> using scala 3.5.1
 //> using toolkit typelevel:0.1.28
-//> using dep com.lihaoyi::scalatags::0.13.1
-//> using dep org.http4s::http4s-dsl::0.23.28
-//> using dep org.http4s::http4s-ember-server::0.23.28
-//> using dep org.http4s::http4s-scalatags::0.25.2
-//> using dep com.softwaremill.sttp.openai::fs2:0.2.4
-//> using dep com.softwaremill.sttp.openai::core:0.2.4
-//> using dep com.softwaremill.sttp.client4::cats:4.0.0-M17
-//> using dep com.github.haifengl::smile-scala:3.1.1
-//> using dep org.apache.pdfbox:pdfbox:3.0.3
-//> using dep com.davegurnell::unindent:1.8.0
-//> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.30.15
-//> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.30.15
+//> using dep org.typelevel::kittens::3.4.0
 //> using dep org.typelevel::log4cats-slf4j:2.7.0
-//> using dep com.outr::scribe-slf4j2:3.15.0
-//> using dep com.outr::scribe-file:3.15.0
+
+//> using dep com.outr::scribe-slf4j2:3.15.2
+//> using dep com.outr::scribe-file:3.15.2
+
+//> using dep org.http4s::http4s-dsl::0.23.29
+//> using dep org.http4s::http4s-ember-server::0.23.29
+//> using dep org.http4s::http4s-scalatags::0.25.2
+
+//> using dep com.lihaoyi::scalatags::0.13.1
+
+//> using dep com.softwaremill.sttp.openai::fs2:0.2.5
+//> using dep com.softwaremill.sttp.openai::core:0.2.5
+//> using dep com.softwaremill.sttp.client4::cats:4.0.0-M17
+
+//> using dep io.scalaland::chimney::1.5.0
+
+//> using dep com.github.haifengl::smile-scala:3.1.1
+
+//> using dep dev.langchain4j:langchain4j:0.35.0
+//> using dep dev.langchain4j:langchain4j-document-parser-apache-tika:0.35.0
+
+///> using dep org.apache.pdfbox:pdfbox:3.0.3, langchain4j-document-parser-apache-tika uses different version
+
+//> using dep com.davegurnell::unindent:1.8.0
+
+//> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.31.1
+//> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.31.1
+
+//> using test.dep com.dimafeng::testcontainers-scala-munit::0.41.4
 
 package supportbot
 
@@ -28,68 +44,48 @@ import sttp.model.Uri.*
 import java.io.File
 
 import supportbot.rag.*
+import supportbot.rag.ingestion.*
 import supportbot.rag.vectorstore.*
-import supportbot.chat.*
 import supportbot.home.*
 import supportbot.clickhouse.*
+import supportbot.context.*
+import supportbot.context.chat.*
+import java.util.UUID
 
 object SupportBot extends ResourceApp.Forever:
   def run(args: List[String]): Resource[IO, Unit] =
     for
-      _                         <- AppLogger.configure.toResource
-      given SttpBackend         <- SttpBackend.resource
-      clickHouseVectorStore     <- ClickHouseVectorStore
-                                     .sttpBased(
-                                       ClickHouseClient.Config(
-                                         url = "http://localhost:8123",
-                                         username = "default",
-                                         password = "default",
-                                       ),
-                                     )
-                                     .toResource
-      given VectorStore[IO]      = clickHouseVectorStore
-      _                         <- clickHouseVectorStore.migrate().toResource
-      given OpenAI               = OpenAI("ollama", uri"http://localhost:11434/v1")
-      given ChatService[IO]      = SttpOpenAIChatService(
-                                     model = Model("llama3.1")
-                                    //  model = Model("llama3.1:8b-instruct-q4_0"),
-                                   )
-      given EmbeddingService[IO] = SttpOpenAIEmbeddingService(
-                                     model = Model("snowflake-arctic-embed"),
-                                   )
+      given AppConfig                 <- AppConfig.load.toResource
+      _                               <- AppLogger.configure.toResource
+      given SttpBackend               <- SttpBackend.resource
+      given ClickHouseClient[IO]       = SttpClickHouseClient.of
+      given ContextRepository[IO]     <- ClickHouseContextRepository.of.toResource
+      given DocumentRepository[IO]    <- ClickHouseDocumentRepository.of.toResource
+      given VectorStoreRepository[IO] <- ClickHouseVectorStore.of.toResource
+      (
+        given ChatCompletionService[IO],
+        given EmbeddingService[IO],
+      )                                = inferenceServicesOf
+      given IngestionService[IO]      <- ClickHouseIngestionService.of.toResource
 
-      // offline - parsing and indexing
-      _                         <- createLocalPdfEmbeddings(
-                                     File("./resources/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
-                                   ).toResource
+      // state-changing side effects
+      _ <- ClickHouseMigrator.migrate().toResource
+      _ <- Fixtures.loadFixtures().toResource
 
-      chatController <- ChatController.of()
+      given ChatService <- ChatService.of()
+      contextController <- ContextController.of()
+      homeController     = HomeController()
 
       _ <- httpApp(
-        controllers = 
-          Vector(
-            chatController, 
-            HomeController
-          ),
-        )
+             controllers = Vector(
+               contextController,
+               homeController,
+             ),
+           )
     yield ()
 
-  // TODO: move to some ingestion service
-  def createLocalPdfEmbeddings(file: File)(using vectorStore: VectorStore[IO], embeddingService: EmbeddingService[IO]) =
-    // TODO: make this user input
-    val documentId      = file.getName
-    val documentVersion = 1
-
-    vectorStore
-      .documentEmbeddingsExists(documentId, documentVersion)
-      .ifM(
-        IO.println(s"Embeddings for document $documentId already exists. Skipping the chunking and indexing."),
-        for
-          _               <- IO.println("Chunking PDF")
-          document        <- DocumentLoader.loadPDF(file, documentId, documentVersion)
-          _               <- IO.println(s"Creating embeddings. It may take a while...")
-          indexEmbeddings <- embeddingService.createIndexEmbeddings(document)
-          _               <- IO.println(s"Created ${indexEmbeddings.size} embeddings.")
-          _               <- vectorStore.store(indexEmbeddings)
-        yield (),
-      )
+  private def inferenceServicesOf(using AppConfig, SttpBackend) =
+    AppConfig.get.inferenceEngine match
+      case InferenceEngine.OpenAIOllama(url) =>
+        given OpenAI = OpenAI("ollama", uri"$url")
+        (SttpOpenAIChatCompletionService(), SttpOpenAIEmbeddingService())

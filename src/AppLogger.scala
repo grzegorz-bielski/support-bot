@@ -12,18 +12,13 @@ import scribe.writer.ConsoleWriter
 import scribe.writer.{Writer as ScribeWriter}
 
 object AppLogger:
-  def configure: IO[Unit] =
-  for
-    logLevel <- Env[IO].get("LOG_LEVEL").map(_.flatMap(Level.get).getOrElse(Level.Info))
-    path     <- Env[IO].get("LOG_PATH")
-    writer    = path match
-                  case Some(path) => AppFileWriter(path)
-                  case None       => ConsoleWriter
+  def configure(using appConfig: AppConfig): IO[Unit] =
+    createFrom(
+      writer = appConfig.logPath.fold(ConsoleWriter)(AppFileWriter),
+      logLevel = appConfig.logLevel,
+    )
 
-    _ <- createFrom(writer, logLevel)
-  yield ()
-
-  def createFrom(writer: ScribeWriter, logLevel: Level): IO[Unit] =
+  private def createFrom(writer: ScribeWriter, logLevel: Level): IO[Unit] =
     IO
       .delay:
         Logger.root

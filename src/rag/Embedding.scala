@@ -7,9 +7,9 @@ object Embedding:
   final case class Index(
     chunk: Chunk,
     value: Vector[Float],
-    documentId: String,
-    documentVersion: Int,
-    fragmentIndex: Int,
+    documentId: DocumentId,
+    contextId: ContextId,
+    fragmentIndex: Long,
   )
 
   /** Embedding retrieved from the vector store
@@ -17,9 +17,9 @@ object Embedding:
   final case class Retrieved(
     chunk: Chunk,
     value: Vector[Float],
-    documentId: String,
-    documentVersion: Int,
-    fragmentIndex: Int,
+    documentId: DocumentId,
+    contextId: ContextId,
+    fragmentIndex: Long,
     score: Double,
   )
 
@@ -27,5 +27,6 @@ object Embedding:
     */
   final case class Query(
     chunk: Chunk,
+    contextId: ContextId,
     value: Vector[Float],
   )

@@ -5,7 +5,6 @@ package vectorstore
 import cats.effect.*
 import cats.syntax.all.*
 import fs2.{Chunk as _, *}
-import supportbot.clickhouse.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.*
 import org.typelevel.log4cats.*
@@ -13,16 +12,20 @@ import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
 import unindent.*
 import java.util.Base64
+import java.util.UUID
 
-final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]) extends VectorStore[IO]:
+import supportbot.clickhouse.*
+
+final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]) extends VectorStoreRepository[IO]:
   import ClickHouseVectorStore.*
 
   def store(index: Vector[Embedding.Index]): IO[Unit] =
     index.headOption
       .traverse: embedding =>
-        documentEmbeddingsExists(embedding.documentId, embedding.documentVersion).ifM(
+        // TODO: maybe this should not be a part of the store method
+        documentEmbeddingsExists(embedding.documentId).ifM(
           info"Embeddings for document ${embedding.documentId} already exists. Skipping the insertion.",
-          storeEmbeddings(index)
+          storeEmbeddings(index),
         )
       .void
 
@@ -31,34 +34,31 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .map: embedding =>
         import embedding.*
 
-        val metadata = s"{${chunk.metadata.toVector.map((k, v) => s"'$k':'$v'").mkString(", ")}}"
-        val embeddings = s"[${value.mkString(", ")}]"
+        val metadata     = chunk.metadata.toClickHouseMap
+        val embeddings   = s"[${value.mkString(", ")}]"
         val encodedValue = s"'${base64TextEncode(chunk.text)}'"
 
-        s"('$documentId', $documentVersion, $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
+        s"(toUUID('$contextId'), toUUID('$documentId'), $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
       .mkString(",\n")
 
     val insertQuery =
       i"""
-      INSERT INTO embeddings (*) VALUES
+      INSERT INTO embeddings (context_id, document_id, fragment_index, chunk_index, value, metadata, embedding) VALUES
       ${values}
       """
 
     client.executeQuery(insertQuery) *>
       info"Stored ${embeddings.size} embeddings."
 
-  def documentEmbeddingsExists(documentId: String, documentVersion: Int): IO[Boolean] =
+  def documentEmbeddingsExists(documentId: DocumentId): IO[Boolean] =
     client
       .streamQueryTextLines:
         i"""
         SELECT
          EXISTS(
-          SELECT 
-           document_id, 
-           document_version 
+          SELECT document_id 
           FROM embeddings 
-          WHERE document_id = '$documentId'
-          AND document_version = $documentVersion
+          WHERE document_id = toUUID('$documentId') 
           LIMIT 1
          )
         """.stripMargin
@@ -67,9 +67,32 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .map(_.trim.toInt)
       .map(_ == 1)
       .flatMap: value =>
-        info"Document $documentId exists: $value".as(value)
+        info"Document $documentId embedding exists: $value".as(value)
 
-  def retrieve(embedding: Embedding.Query): Stream[IO, Embedding.Retrieved] =
+  // TODO: query by all documents in the context??
+
+  def retrieve(embedding: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
+    // Workaround for the lack of support for inequality joins in CH
+    // `BETWEEN` and `IN` doesn't work with CH joins
+    // and for inequality you need to turn on experimental settings:
+    // https://clickhouse.com/docs/en/sql-reference/statements/select/join#experimental-join-with-inequality-conditions-for-columns-from-different-tables
+
+    val lookBackQueryFragment =
+      (options.fragmentLookupRange.lookBack until 0 by -1)
+        .map: i =>
+          i"""
+          ae.fragment_index = e.matched_fragment_index - $i OR
+          """
+        .mkString("\n")
+
+    val lookAheadQueryFragment =
+      (1 to options.fragmentLookupRange.lookAhead)
+        .map: i =>
+          i"""
+          ae.fragment_index = e.matched_fragment_index + $i OR
+          """
+        .mkString("\n")
+
     client
       .streamQueryJson[ClickHouseRetrievedRow]:
         i"""
@@ -77,87 +100,70 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
             SELECT * FROM (
               SELECT 
                 document_id,
-                document_version, 
-                fragment_index,
+                context_id,
+                fragment_index as matched_fragment_index,
+                chunk_index as matched_chunk_index,
                 value,
                 metadata,
-                cosineDistance(embedding, [${embedding.value.mkString(", ")}]) AS score 
+                cosineDistance(embedding, [${embedding.value.mkString(", ")}]) AS score
               FROM embeddings
+              WHERE context_id = toUUID('${embedding.contextId}')
               ORDER BY score ASC
-              LIMIT 3
+              LIMIT ${options.topK}
             ) 
-            LIMIT 1 BY document_id, document_version, fragment_index
+            LIMIT 1 BY document_id, matched_fragment_index
           )
           SELECT 
             document_id,
-            document_version,
-            fragment_index,
-            chunk_index,
+            context_id,
+            ae.fragment_index as fragment_index,
+            ae.chunk_index as chunk_index,
+            matched_fragment_index,
+            matched_chunk_index,
             base64Decode(ae.value) AS value,
-            metadata,
+            ae.metadata as metadata,
             score
           FROM matched_embeddings AS e
           INNER JOIN embeddings AS ae
-          ON ae.document_id = e.document_id
-          AND ae.document_version = e.document_version
+          ON 
+            ae.context_id = e.context_id AND 
+            ae.document_id = e.document_id
           AND
-              ae.fragment_index = e.fragment_index OR
-              ae.fragment_index = e.fragment_index - 1 OR
-              ae.fragment_index = e.fragment_index + 1
-          ORDER BY document_id, document_version, fragment_index, chunk_index
+            $lookBackQueryFragment
+            $lookAheadQueryFragment
+            ae.fragment_index = e.matched_fragment_index
+          ORDER BY toUInt128(document_id), fragment_index, chunk_index
+          LIMIT 1 BY document_id, fragment_index
           FORMAT JSONEachRow
         """
       .map: row =>
         Embedding.Retrieved(
+          documentId = DocumentId(row.document_id),
+          contextId = ContextId(row.context_id),
           chunk = Chunk(text = row.value, index = row.chunk_index, metadata = row.metadata),
           value = embedding.value,
-          documentId = row.document_id,
-          documentVersion = row.document_version,
           fragmentIndex = row.fragment_index,
-          score = row.score
+          score = row.score,
         )
 
-  def migrate(): IO[Unit] =
-    // TODO: temp, move to migration scripts
-    Vector(
-      // i"""
-      // DROP TABLE IF EXISTS embeddings;
-      // """,
-      i"""
-      CREATE TABLE IF NOT EXISTS embeddings
-      (
-        document_id String,           -- unique identifier for the document, for now it's the file name
-        document_version Int64,       -- version of the document, for now it's 1
-        fragment_index Int64,         -- index of the fragment (like page) in the document
-        chunk_index Int64,            -- index of the chunk in the fragment
-        value String,                 -- base64 encoded value (likely just text) of the chunk
-        metadata Map(String, String), -- any additional metadata of the chunk
-        embedding Array(Float32),
-        INDEX ann_idx embedding TYPE usearch('cosineDistance')
-      )
-      ENGINE = MergeTree()            -- not replacing, as we want to keep all embeddings for a given fragment_index
-      ORDER BY (document_id, document_version, fragment_index)
-      """
-    ).traverse_(client.executeQuery)
-
   private def base64TextEncode(input: String): String =
-    val charset = "UTF-8"
-    val encoder = Base64.getEncoder // RFC4648 as on the decoder side in CH
+    val charset      = "UTF-8"
+    val encoder      = Base64.getEncoder // RFC4648 as on the decoder side in CH
     val encodedBytes = encoder.encode(input.getBytes(charset))
 
     String(encodedBytes, charset)
 
 object ClickHouseVectorStore:
-  def sttpBased(config: ClickHouseClient.Config)(using SttpBackend): IO[ClickHouseVectorStore] =
+  def of(using client: ClickHouseClient[IO]): IO[ClickHouseVectorStore] =
     for given Logger[IO] <- Slf4jLogger.create[IO]
-    yield ClickHouseVectorStore(SttpClickHouseClient(config))
+    yield ClickHouseVectorStore(client)
 
   private final case class ClickHouseRetrievedRow(
-      document_id: String,
-      document_version: Int,
-      fragment_index: Int,
-      chunk_index: Int,
-      value: String,
-      metadata: Map[String, String],
-      score: Double
+    document_id: UUID,
+    context_id: UUID,
+    fragment_index: Long,
+    chunk_index: Long,
+    value: String,
+    metadata: Map[String, String],
+    score: Double,
   ) derives ConfiguredJsonValueCodec

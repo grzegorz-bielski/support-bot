@@ -1,4 +1,5 @@
 package supportbot
+package context
 package chat
 
 import cats.syntax.all.*
@@ -13,34 +14,32 @@ import sttp.openai.OpenAIExceptions.OpenAIException
 import sttp.openai.requests.completions.chat.ChatRequestBody.{ChatBody, ChatCompletionModel}
 import sttp.openai.requests.completions.chat.message.*
 
-final class SttpOpenAIChatService(model: Model)(using
+final class SttpOpenAIChatCompletionService(using
   backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   openAIProtocol: OpenAI,
-) extends ChatService[IO]:
-  import SttpOpenAIChatService.*
-
-  private val chatModel = ChatCompletionModel.CustomChatCompletionModel(model)
+) extends ChatCompletionService[IO]:
+  import SttpOpenAIChatCompletionService.*
 
   private val choicesAmount = 1
 
-  def chatCompletion(prompt: Prompt): Stream[IO, ChatChunkResponse] =
+  def chatCompletion(prompt: Prompt, model: Model): Stream[IO, ChatChunkResponse] =
     Stream
       .eval:
         openAIProtocol
-          .createStreamedChatCompletion[IO](createChatBody(prompt))
+          .createStreamedChatCompletion[IO](createChatBody(prompt, model))
           .send(backend)
           .map(_.body)
           .rethrow
       .flatten
       .map: response =>
         new ChatChunkResponse:
-          def contentDeltas: String = 
+          def contentDeltas: String =
             // assuming only one choice (configured by `choicesAmount`)
             response.choices.headOption.flatMap(_.delta.content).getOrElse("")
 
-  private def createChatBody(prompt: Prompt) =
+  private def createChatBody(prompt: Prompt, model: Model) =
     ChatBody(
-      model = chatModel,
+      model = ChatCompletionModel.CustomChatCompletionModel(model.name),
       messages = bodyMessages(prompt),
       n = choicesAmount.some,
       tools = Some(
@@ -57,31 +56,21 @@ final class SttpOpenAIChatService(model: Model)(using
       ),
     )
 
-object SttpOpenAIChatService:
+object SttpOpenAIChatCompletionService:
   private def bodyMessages(prompt: Prompt): Vector[Message] =
-    val systemMessage = Message.SystemMessage(
-      content = Vector(
-        prompt.taskContext,
-        prompt.toneContext,
-        prompt.taskDescription,
-      ).map(_.getOrElse("")).mkString("\n"),
-    )
+    val renderedPrompt = prompt.render  
 
-    val examplesMessages = prompt.examples.map:
-      case ("User", text)      => Message.UserMessage(Content.TextContent(text))
-      case ("Assistant", text) => Message.AssistantMessage(text)
+    val systemMessage = 
+      renderedPrompt.system.map(text => Message.SystemMessage(text)).toVector
+
+    val examplesMessages = renderedPrompt.examples.map:
+      case Example.User(text)      => Message.UserMessage(Content.TextContent(text))
+      case Example.Assistant(text) => Message.AssistantMessage(text)
 
     val userMessage = Message.UserMessage(
-      content = Content.TextContent(
-        Vector(
-          prompt.queryContext,
-          prompt.query.some,
-          prompt.precognition,
-          prompt.outputFormatting,
-        ).map(_.getOrElse("")).mkString("\n"),
-      ),
+      content = Content.TextContent(renderedPrompt.user),
     )
 
-    val prefill = prompt.prefill.map(text => Message.AssistantMessage(text)).toVector
+    val assistant = renderedPrompt.assistant.map(text => Message.AssistantMessage(text)).toVector
 
-    (systemMessage +: examplesMessages :+ userMessage) ++ prefill
+    (systemMessage ++ examplesMessages :+ userMessage) ++ assistant
