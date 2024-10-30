@@ -21,7 +21,7 @@ object ContextView extends HtmxView:
   )(using AppConfig) = RootLayoutView.view(
     div(
       configMenu(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName),
-      div(cls := "divider", aria.hidden := true),
+      div(cls := "divider", aria.hidden := true, "workbench"),
       ChatView.messages(),
       ChatView.chatForm(postUrl = chatPostUrl),
     ),
@@ -170,7 +170,7 @@ object ContextView extends HtmxView:
             li(
               a(
                 documentIcon(),
-                s"${document.name} - ${document.version}",
+                s"${document.name} - v${document.version}",
               ),
             ),
         ),

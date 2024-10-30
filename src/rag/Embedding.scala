@@ -8,6 +8,7 @@ object Embedding:
     chunk: Chunk,
     value: Vector[Float],
     documentId: DocumentId,
+    contextId: ContextId,
     fragmentIndex: Long,
   )
 
@@ -17,6 +18,7 @@ object Embedding:
     chunk: Chunk,
     value: Vector[Float],
     documentId: DocumentId,
+    contextId: ContextId,
     fragmentIndex: Long,
     score: Double,
   )
@@ -25,5 +27,6 @@ object Embedding:
     */
   final case class Query(
     chunk: Chunk,
+    contextId: ContextId,
     value: Vector[Float],
   )

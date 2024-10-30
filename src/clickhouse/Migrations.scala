@@ -4,10 +4,9 @@ package clickhouse
 import unindent.*
 
 lazy val AllMigrations = Vector(
-    Migration(
-        name = "create_context_table",
-        ddl = 
-            i"""
+  Migration(
+    name = "create_context_table",
+    ddl = i"""
             CREATE TABLE IF NOT EXISTS contexts
             (
                 id UUID,                            -- unique identifier of the context
@@ -20,12 +19,11 @@ lazy val AllMigrations = Vector(
             )
             ENGINE = ReplacingMergeTree()
             ORDER BY (toUInt128(id))
-            """
-    ),
-    Migration(
-        name = "create_documents_table",
-        ddl = 
-            i"""
+            """,
+  ),
+  Migration(
+    name = "create_documents_table",
+    ddl = i"""
             CREATE TABLE IF NOT EXISTS documents
             (
                 id UUID,                                    -- unique identifier of the document
@@ -40,14 +38,14 @@ lazy val AllMigrations = Vector(
             )
             ENGINE = ReplacingMergeTree()
             ORDER BY (toUInt128(context_id), toUInt128(id)) -- CH's UUIDs are sorted by their second half, so we need to convert them to UInt128 for proper ordering
-            """
-    ),
-    Migration(
-        name = "create_embeddings_table",
-        ddl = 
-            i"""
+            """,
+  ),
+  Migration(
+    name = "create_embeddings_table",
+    ddl = i"""
             CREATE TABLE IF NOT EXISTS embeddings
             (
+                context_id UUID,                                           -- unique identifier of the context
                 document_id UUID,                                          -- unique identifier of the document
                 fragment_index Int64,                                      -- index of the fragment (like page) in the document, if there is no clear separation of fragments in source document, it will be equal to chunk_index
                 chunk_index Int64,                                         -- index of the chunk in the fragment, if there is no clear separation into fragments in source document, it will be always 0
@@ -58,7 +56,7 @@ lazy val AllMigrations = Vector(
                 INDEX ann_idx embedding TYPE usearch('cosineDistance')     -- ANN index for fast retrieval of embeddings similar according to cosine distance
             )
             ENGINE = MergeTree()                                           -- not replacing, as we want to keep all embeddings for a given fragment_index
-            ORDER BY (toUInt128(document_id), fragment_index, chunk_index) -- CH's UUIDs are sorted by their second half, so we need to convert them to UInt128 for proper ordering
-            """
-    ),
+            ORDER BY (toUInt128(context_id), toUInt128(document_id), fragment_index, chunk_index) -- CH's UUIDs are sorted by their second half, so we need to convert them to UInt128 for proper ordering
+            """,
+  ),
 )

@@ -41,6 +41,7 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
                                       chunk = embedding.chunk,
                                       value = embedding.value,
                                       documentId = embedding.documentId,
+                                      contextId = embedding.contextId,
                                       fragmentIndex = embedding.fragmentIndex,
                                       score = score, // score for the main chunk, not the neighboring chunk
                                     )

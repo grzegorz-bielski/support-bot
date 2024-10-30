@@ -92,19 +92,21 @@ final class ContextController(using
           for
             query   <- req.as[ChatQuery]
             queryId <- QueryId.of
-            _       <- info"Received query: $query"
             // TODO: use .background / Resource and maybe queue requests
             _       <- chatService
                          .processQuery(
-                           query = query,
-                           queryId = queryId,
-                           promptTemplate = context.promptTemplate,
-                           retrieveOptions = RetrieveOptions(
-                             topK = 15,
-                             fragmentLookupRange = LookupRange(5, 5),
+                           ChatService.Input(
+                             contextId = context.id,
+                             query = query,
+                             queryId = queryId,
+                             promptTemplate = context.promptTemplate,
+                             retrieveOptions = RetrieveOptions(
+                               topK = 15,
+                               fragmentLookupRange = LookupRange(5, 5),
+                             ),
+                             chatModel = context.chatModel,
+                             embeddingsModel = context.embeddingsModel,
                            ),
-                           chatModel = context.chatModel,
-                           embeddingsModel = context.embeddingsModel,
                          )
                          .start
             res     <-
@@ -120,26 +122,30 @@ final class ContextController(using
 
       case req @ POST -> Root / ContextIdVar(contextId) / "documents" / "upload" =>
         getContextOrNotFound(contextId): context =>
-          EntityDecoder.mixedMultipartResource[IO]().use: decoder => 
-            req.decodeWith(decoder, strict = true): multipart =>
-              val uploadedDocuments = multipart.parts
-                .filter(_.name.contains(fileFieldName))
-                .parTraverse: part =>
-                  val documentName = DocumentName(part.filename.getOrElse("unknown"))
+          EntityDecoder
+            .mixedMultipartResource[IO]()
+            .use: decoder =>
+              req.decodeWith(decoder, strict = true): multipart =>
+                val uploadedDocuments = multipart.parts
+                  .filter(_.name.contains(fileFieldName))
+                  .parTraverse: part =>
+                    val documentName = DocumentName(part.filename.getOrElse("unknown"))
 
-                  ingestionService.ingest(
-                    IngestionService.Input(
-                      contextId = context.id,
-                      documentName = documentName,
-                      embeddingsModel = context.embeddingsModel,
-                      content = part.body,
-                    ),
-                  ).as(documentName)
+                    ingestionService
+                      .ingest(
+                        IngestionService.Input(
+                          contextId = context.id,
+                          documentName = documentName,
+                          embeddingsModel = context.embeddingsModel,
+                          content = part.body,
+                        ),
+                      )
+                      .as(documentName)
 
-              uploadedDocuments.flatMap: docs => 
-                Ok(
-                  ContextView.uploadedDocuments(docs),
-                )
+                uploadedDocuments.flatMap: docs =>
+                  Ok(
+                    ContextView.uploadedDocuments(docs),
+                  )
 
   private def getContextOrNotFound(contextId: ContextId)(fn: ContextInfo => IO[Response[IO]]): IO[Response[IO]] =
     contextRepository

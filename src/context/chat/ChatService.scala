@@ -10,6 +10,7 @@ import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
 import scala.concurrent.duration.{span as _, *}
 import java.util.UUID
+import java.time.Duration
 
 import supportbot.rag.vectorstore.*
 import supportbot.rag.*
@@ -28,7 +29,6 @@ final class ChatService(
   // - chat history
 
   // TODO: do not use xml tags in llama
-  // TODO: take prompt from context
   // private def appPrompt(query: String, context: Option[String]) = Prompt(
   //   taskContext = "You are an expert Q&A system that is trusted around the world.".some,
   //   toneContext = "You should maintain a professional and friendly tone.".some,
@@ -48,19 +48,17 @@ final class ChatService(
   //   ).mkString("\n").some,
   // )
 
-  def processQuery(
-      query: ChatQuery, 
-      queryId: QueryId,
-      promptTemplate: PromptTemplate,
-      retrieveOptions: RetrieveOptions,
-      chatModel: Model,
-      embeddingsModel: Model
-    ): IO[Unit] =
+  def processQuery(input: ChatService.Input): IO[Unit] =
+    import input.*
+
     for
+      _                   <- info"Processing the response for queryId: $queryId has started."
+      processingStarted   <- IO.realTimeInstant
       queryEmbeddings     <- embeddingService.createQueryEmbeddings(
-        chunk = Chunk(query.content, index = 0), 
-        model = embeddingsModel
-      )
+                               contextId = contextId,
+                               chunk = Chunk(query.content, index = 0),
+                               model = embeddingsModel,
+                             )
       retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings, retrieveOptions).compile.toVector
 
       // _ <- info"Retrieved embeddings: $retrievedEmbeddings"
@@ -72,7 +70,7 @@ final class ChatService(
       contextChunks = retrievedEmbeddings.map(_.chunk)
       _            <- info"Retrieved context: ${contextChunks.map(_.toEmbeddingInput)}"
 
-      prompt = 
+      prompt =
         Prompt(
           query = query.content,
           queryContext = contextChunks.map(_.toEmbeddingInput).mkString("\n").some,
@@ -100,7 +98,11 @@ final class ChatService(
              .evalTap(pubSub.publish)
              .compile
              .drain
-      _ <- info"Processing the response for queryId: $queryId has been completed"
+
+      processingEnded   <- IO.realTimeInstant
+      processingDuration = Duration.between(processingStarted, processingEnded)
+      _                 <-
+        info"Processing the response for queryId: $queryId has been completed. (took: ${processingDuration.getSeconds} s)"
     yield ()
 
   def subscribeToQueryResponses(queryId: QueryId): Stream[IO, PubSub.Message] =
@@ -110,7 +112,22 @@ final class ChatService(
         .timeout(5.minutes)
 
 object ChatService:
-  def of()(using ChatCompletionService[IO], ContextRepository[IO], VectorStoreRepository[IO], EmbeddingService[IO]): Resource[IO, ChatService] =
+  final case class Input(
+    contextId: ContextId,
+    query: ChatQuery,
+    queryId: QueryId,
+    promptTemplate: PromptTemplate,
+    retrieveOptions: RetrieveOptions,
+    chatModel: Model,
+    embeddingsModel: Model,
+  )
+
+  def of()(using
+    ChatCompletionService[IO],
+    ContextRepository[IO],
+    VectorStoreRepository[IO],
+    EmbeddingService[IO],
+  ): Resource[IO, ChatService] =
     for
       given Logger[IO] <- Slf4jLogger.create[IO].toResource
       pubSub           <- PubSub.resource[IO]

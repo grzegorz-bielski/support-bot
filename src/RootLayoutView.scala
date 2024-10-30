@@ -59,7 +59,7 @@ object RootLayoutView extends HtmxView:
   lazy val navbar =
     div(
       cls := "navbar bg-base-100",
-      div(cls := "flex-1", appLink("/", "SupportBot", cls := "btn btn-ghost text-xl")),
+      div(cls := "flex-1", appLink("/", "SupportBot 🤖", cls := "btn btn-ghost text-xl")),
       // div(
       //   cls   := "flex-none",
       //   ul(

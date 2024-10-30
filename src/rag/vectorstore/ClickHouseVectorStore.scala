@@ -38,12 +38,12 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
         val embeddings   = s"[${value.mkString(", ")}]"
         val encodedValue = s"'${base64TextEncode(chunk.text)}'"
 
-        s"(toUUID('$documentId'), $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
+        s"(toUUID('$contextId'), toUUID('$documentId'), $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
       .mkString(",\n")
 
     val insertQuery =
       i"""
-      INSERT INTO embeddings (document_id, fragment_index, chunk_index, value, metadata, embedding) VALUES
+      INSERT INTO embeddings (context_id, document_id, fragment_index, chunk_index, value, metadata, embedding) VALUES
       ${values}
       """
 
@@ -100,12 +100,14 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
             SELECT * FROM (
               SELECT 
                 document_id,
+                context_id,
                 fragment_index as matched_fragment_index,
                 chunk_index as matched_chunk_index,
                 value,
                 metadata,
                 cosineDistance(embedding, [${embedding.value.mkString(", ")}]) AS score
               FROM embeddings
+              WHERE context_id = toUUID('${embedding.contextId}')
               ORDER BY score ASC
               LIMIT ${options.topK}
             ) 
@@ -113,6 +115,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
           )
           SELECT 
             document_id,
+            context_id,
             ae.fragment_index as fragment_index,
             ae.chunk_index as chunk_index,
             matched_fragment_index,
@@ -122,7 +125,9 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
             score
           FROM matched_embeddings AS e
           INNER JOIN embeddings AS ae
-          ON ae.document_id = e.document_id
+          ON 
+            ae.context_id = e.context_id AND 
+            ae.document_id = e.document_id
           AND
             $lookBackQueryFragment
             $lookAheadQueryFragment
@@ -134,6 +139,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .map: row =>
         Embedding.Retrieved(
           documentId = DocumentId(row.document_id),
+          contextId = ContextId(row.context_id),
           chunk = Chunk(text = row.value, index = row.chunk_index, metadata = row.metadata),
           value = embedding.value,
           fragmentIndex = row.fragment_index,
@@ -154,6 +160,7 @@ object ClickHouseVectorStore:
 
   private final case class ClickHouseRetrievedRow(
     document_id: UUID,
+    context_id: UUID,
     fragment_index: Long,
     chunk_index: Long,
     value: String,
