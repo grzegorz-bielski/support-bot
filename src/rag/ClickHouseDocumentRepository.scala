@@ -39,6 +39,27 @@ final class ClickHouseDocumentRepository(client: ClickHouseClient[IO])(using Log
       .compile
       .toVector
 
+  def get(contextId: ContextId, name: DocumentName): IO[Option[Document.Info]] =
+    client
+      .streamQueryJson[IngestedDocumentRow]:
+        i"""
+        SELECT 
+          id, 
+          context_id, 
+          name, 
+          description, 
+          version, 
+          type,
+          metadata
+        FROM documents
+        WHERE context_id = toUUID('$contextId') 
+        AND name = '$name'
+        FORMAT JSONEachRow
+        """
+      .map(_.asDocumentInfo)
+      .compile
+      .last
+
   override def createOrUpdate(document: Document.Info): IO[Unit] =
     // should be merged by ReplacingMergeTree on sorting key duplicates, but not at once
     client.executeQuery:

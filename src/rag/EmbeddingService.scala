@@ -15,18 +15,16 @@ import sttp.openai.requests.embeddings.EmbeddingsRequestBody.*
 import sttp.openai.requests.embeddings.EmbeddingsResponseBody.*
 
 trait EmbeddingService[F[_]]:
-  def createIndexEmbeddings(document: Document.Ingested): F[Vector[Embedding.Index]]
-  def createQueryEmbeddings(chunk: Chunk): F[Embedding.Query]
+  def createIndexEmbeddings(document: Document.Ingested, model: Model): F[Vector[Embedding.Index]]
+  def createQueryEmbeddings(chunk: Chunk, model: Model): F[Embedding.Query]
 
-final class SttpOpenAIEmbeddingService(model: Model)(using backend: SttpBackend, openAIProtocol: OpenAI)
-    extends EmbeddingService[IO]:
-  val embeddingModel = EmbeddingsModel.CustomEmbeddingsModel(model.name)
-
-  def createIndexEmbeddings(document: Document.Ingested): IO[Vector[Embedding.Index]] =
+final class SttpOpenAIEmbeddingService(using backend: SttpBackend, openAIProtocol: OpenAI) extends EmbeddingService[IO]:
+  def createIndexEmbeddings(document: Document.Ingested, model: Model): IO[Vector[Embedding.Index]] =
     createEmbeddings(
-      EmbeddingsInput.MultipleInput(
+      input = EmbeddingsInput.MultipleInput(
         document.fragments.map(_.chunk.toEmbeddingInput),
       ),
+      model = model,
     )
       .map: embeddingResponse =>
         document.fragments
@@ -39,8 +37,11 @@ final class SttpOpenAIEmbeddingService(model: Model)(using backend: SttpBackend,
               fragmentIndex = fragment.index,
             )
 
-  def createQueryEmbeddings(chunk: Chunk): IO[Embedding.Query] =
-    createEmbeddings(EmbeddingsInput.SingleInput(chunk.toEmbeddingInput))
+  def createQueryEmbeddings(chunk: Chunk, model: Model): IO[Embedding.Query] =
+    createEmbeddings(
+      input = EmbeddingsInput.SingleInput(chunk.toEmbeddingInput),
+      model = model,
+    )
       .map: response =>
         Embedding.Query(
           // TODO: assuming that single chunk will product one embedding for `SingleInput`, but we should validate it
@@ -48,12 +49,12 @@ final class SttpOpenAIEmbeddingService(model: Model)(using backend: SttpBackend,
           chunk = chunk,
         )
 
-  private def createEmbeddings(input: EmbeddingsInput) =
+  private def createEmbeddings(input: EmbeddingsInput, model: Model) =
     openAIProtocol
       .createEmbeddings(
         EmbeddingsBody(
-          model = embeddingModel,
           input = input,
+          model = EmbeddingsModel.CustomEmbeddingsModel(model.name),
         ),
       )
       .send(backend)

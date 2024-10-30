@@ -2,19 +2,22 @@ package supportbot
 package context
 
 import fs2.{Chunk as _, *}
+import fs2.io.file.Files
 import cats.effect.*
 import cats.syntax.all.*
+import cats.effect.syntax.all.*
 import org.http4s.{scalatags as _, h2 as _, *}
 import org.http4s.FormDataDecoder.*
-import scalatags.Text.all.*
-import org.typelevel.log4cats.*
-import org.typelevel.log4cats.slf4j.*
-import org.typelevel.log4cats.syntax.*
-import scala.concurrent.duration.{span as _, *}
-import java.util.UUID
 import org.http4s.dsl.impl.QueryParamDecoderMatcher
 import org.http4s.implicits.*
 import org.http4s.headers.Location
+import org.http4s.multipart.*
+import org.typelevel.log4cats.*
+import org.typelevel.log4cats.slf4j.*
+import org.typelevel.log4cats.syntax.*
+import scalatags.Text.all.*
+import scala.concurrent.duration.{span as _, *}
+import java.util.UUID
 
 import context.chat.*
 import supportbot.rag.vectorstore.{VectorStoreRepository, RetrieveOptions, LookupRange}
@@ -25,6 +28,7 @@ final class ContextController(using
   contextRepository: ContextRepository[IO],
   documentRepository: DocumentRepository[IO],
   chatService: ChatService,
+  appConfig: AppConfig,
 ) extends TopLevelHtmxController:
   import ContextController.*
 
@@ -55,7 +59,8 @@ final class ContextController(using
             response  <- Ok(
                            ContextView.view(
                              context = context,
-                             postUrl = s"/$prefix/${context.id}/chat/query",
+                             uploadUrl = s"/$prefix/${context.id}/documents/upload",
+                             chatPostUrl = s"/$prefix/${context.id}/chat/query",
                              documents = documents,
                            ),
                          )
@@ -92,6 +97,8 @@ final class ContextController(using
                              topK = 15,
                              fragmentLookupRange = LookupRange(5, 5),
                            ),
+                           chatModel = context.chatModel,
+                           embeddingsModel = context.embeddingsModel,
                          )
                          .start
             res     <-
@@ -105,16 +112,38 @@ final class ContextController(using
               )
           yield res
 
-      // case req @ POST -> Root =>
-      //     req.decode[UrlForm] { data =>
-      //     for
-      //         name <- data.getFirst("name").liftTo[IO](new IllegalArgumentException("name is required"))
-      //         description <- data.getFirst("description").liftTo[IO](new IllegalArgumentException("description is required"))
-      //         context = Context(UUID.randomUUID(), name, description)
-      //         _ <- contextRepository.create(context)
-      //         response <- SeeOther(Uri.unsafeFromString(s"/contexts/${context.id}"))
-      //     yield response
-      //     }
+      case req @ POST -> Root / ContextIdVar(contextId) / "documents" / "upload" =>
+        getContextOrNotFound(contextId): context =>
+          EntityDecoder.mixedMultipartResource[IO]().use: decoder => 
+            req.decodeWith(decoder, strict = true): multipart =>
+
+              val files = multipart.parts
+                .filter(_.name.contains("file"))
+                .traverse: part =>
+                  // Files[IO].writeAll(part.body, java.nio.file.Paths.get(s"/tmp/${part.filename.getOrElse("unknown")}"))
+                  // part.body.compile.to(Array)
+                  // val kek = fs2.io.toInputStream
+
+                  ???
+
+              println("multipart: " + multipart)
+
+              Ok("Uploaded")
+              // multipart.parts.traverse: part =>
+              //   part.name.traverse: name =>
+              //     part.bodyText.compile.string.map: content =>
+              //       // val picture = multipart.parts.find(_.name.contains("picture"))
+              //       info"Part name: $name, content: $content"
+          // for
+          //   // multipart <- req.as[Multipart[IO]]
+          //   // _         <- multipart.parts.traverse: part =>
+          //                 // info"part: ${part}"
+          //                 //  part.name.traverse: name =>
+          //                 //    part.bodyText.compile.string.map: content =>
+          //                 //      info"Part name: $name, content: $content"
+
+          //   res <- Ok()
+          // yield res
 
   private def getContextOrNotFound(contextId: ContextId)(fn: ContextInfo => IO[Response[IO]]): IO[Response[IO]] =
     contextRepository
@@ -124,7 +153,12 @@ final class ContextController(using
         case None          => NotFound()
 
 object ContextController:
-  def of()(using ContextRepository[IO], DocumentRepository[IO], ChatService): Resource[IO, ContextController] =
+  def of()(using
+    ContextRepository[IO],
+    DocumentRepository[IO],
+    ChatService,
+    AppConfig,
+  ): Resource[IO, ContextController] =
     for given Logger[IO] <- Slf4jLogger.create[IO].toResource
     yield ContextController()
 

@@ -104,3 +104,15 @@ final class SttpClickHouseClient(config: ClickHouseClient.Config)(using backend:
       )
       .body(query)
       .readTimeout(config.httpReadTimeout)
+
+object SttpClickHouseClient:
+  def of(using AppConfig, SttpBackend) =
+    val chConf = AppConfig.get.clickhouse 
+
+    SttpClickHouseClient(
+      config = ClickHouseClient.Config(
+        url = chConf.url,
+        username = chConf.username,
+        password = chConf.password,
+      ),
+    )

@@ -5,7 +5,7 @@ import cats.effect.*
 import cats.syntax.all.*
 import org.http4s.{scalatags as _, h2 as _, *}
 import scalatags.Text.all.*
-import scalatags.Text.tags2.progress
+import scalatags.Text.tags2.{progress}
 
 import context.chat.*
 
@@ -14,17 +14,18 @@ import supportbot.rag.*
 object ContextView extends HtmxView:
   def view(
     context: ContextInfo,
-    postUrl: String,
+    chatPostUrl: String,
+    uploadUrl: String,
     documents: Vector[Document.Info],
-  ) = RootLayoutView.view(
+  )(using AppConfig) = RootLayoutView.view(
     div(
-      configMenu(documents),
+      configMenu(uploadUrl = uploadUrl, documents),
       ChatView.messages(),
-      ChatView.chatForm(postUrl),
+      ChatView.chatForm(postUrl = chatPostUrl),
     ),
   )
 
-  def contextsOverview(contexts: Vector[ContextInfo]) =
+  def contextsOverview(contexts: Vector[ContextInfo])(using AppConfig) =
     RootLayoutView.view(
       div(
         div(
@@ -63,10 +64,10 @@ object ContextView extends HtmxView:
       ),
     )
 
-  private def configMenu(documents: Vector[Document.Info]) =
+  private def configMenu(uploadUrl: String, documents: Vector[Document.Info]) =
     div(
       cls := "grid grid-cols-1 md:grid-cols-2 gap-4 py-4",
-      div(knowledgeBase(documents)),
+      div(knowledgeBase(uploadUrl, documents)),
       div(promptSettings()),
       div(retrievalSettings()),
     )
@@ -143,7 +144,10 @@ object ContextView extends HtmxView:
       ),
     )
 
-  private def knowledgeBase(documents: Vector[Document.Info]) =
+  private def knowledgeBase(
+    uploadUrl: String,
+    documents: Vector[Document.Info],
+  ) =
     collapse(
       opened = true,
       collapseTitle = "Knowledge Base",
@@ -159,32 +163,89 @@ object ContextView extends HtmxView:
               ),
             ),
         ),
-        form(
-          cls := "flex items-center justify-center w-full",
-          label(
-            `for` := "dropzone-file",
-            cls   := "flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-base-100 transition-colors hover:border-gray-400",
-            div(
-              cls    := "flex flex-col items-center justify-center pt-5 pb-6",
-              span(uploadIcon()),
-              p(
-                cls := "mb-2 text-sm text-gray-500 dark:text-gray-400",
-                span(
-                  cls    := "font-semibold",
-                  "Click to upload",
-                ),
-                span(cls := "ml-1", "or drag and drop"),
-              ),
-              p(cls := "text-xs text-gray-500 dark:text-gray-400", "PDF, TXT, HTML, Word, EPUB and more"),
-            ),
-            input(
-                id := "dropzone-file", 
-                `type` := "file", 
-                cls := "hidden",
-                multiple := "true",
+        modal(
+          modalId = "uploadModal",
+          buttonTitle = "Upload more",
+          modalTitle = "Upload your files",
+          modalContent = uploadForm(uploadUrl = uploadUrl),
+          buttonExtraClasses = Vector("btn-secondary block ml-auto"),
+        ),
+      ),
+    )
+
+  private def modal(
+    modalId: String,
+    buttonTitle: String,
+    modalTitle: String,
+    modalContent: Modifier,
+    buttonExtraClasses: Vector[String] = Vector.empty,
+  ) =
+    Vector(
+      button(
+        cls     := "btn " ++ buttonExtraClasses.mkString(" "),
+        onclick := s"$modalId.showModal()",
+        buttonTitle,
+      ),
+      dialog(
+        id      := modalId,
+        cls     := "modal modal-bottom sm:modal-middle",
+        div(
+          cls       := "modal-box",
+          form(
+            method := "dialog",
+            button(
+              cls                := "btn btn-sm btn-circle btn-ghost absolute right-2 top-2",
+              attr("aria-title") := "close",
+              "✕",
             ),
           ),
+          h3(cls   := "text-lg font-bold", modalTitle),
+          modalContent,
         ),
+        form(method := "dialog", cls := "modal-backdrop", button("close")),
+      ),
+    )
+
+  // https://uploadcare.com/blog/how-to-make-a-drag-and-drop-file-uploader/
+  // https://http4s.org/v1/docs/multipart.html
+  private def uploadForm(
+    uploadUrl: String,
+  )            =
+    form(
+      id            := "upload-form",
+      cls           := "w-full",
+      `hx-post`     := uploadUrl,
+      `hx-encoding` := "multipart/form-data",
+      div(
+        cls := "my-10",
+        label(
+          `for` := "dropzone-file",
+          cls   := "form-control flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-base-100 transition-colors hover:border-gray-400",
+          span(
+            cls          := "flex flex-col items-center justify-center pt-5 pb-6",
+            span(uploadIcon()),
+            p(
+              cls := "mb-2 text-sm text-gray-500 dark:text-gray-400",
+              span(
+                cls    := "font-semibold",
+                "Click to upload",
+              ),
+              span(cls := "ml-1", "or drag and drop"),
+            ),
+            p(cls := "text-xs text-gray-500 dark:text-gray-400", "PDF, TXT, HTML, Word, EPUB and more"),
+          ),
+          input(
+            id           := "dropzone-file",
+            `type`       := "file",
+            attr("name") := "file",
+            cls          := "hidden",
+            multiple     := "true",
+          ),
+        )
+      ),
+      button(
+        cls := "btn btn-primary block ml-auto",
+        "Upload",
       ),
     )
 

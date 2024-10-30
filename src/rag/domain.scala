@@ -17,6 +17,9 @@ object DocumentVersion:
 
   given JsonValueCodec[DocumentVersion] = JsonCodecMaker.make
 
+extension (underlying: DocumentVersion)
+  def next: DocumentVersion = DocumentVersion(underlying + 1)
+
 opaque type DocumentId = UUID
 object DocumentId:
   inline def apply(value: UUID): DocumentId = value

@@ -80,13 +80,17 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
     val lookBackQueryFragment =
       (options.fragmentLookupRange.lookBack until 0 by -1)
         .map: i =>
-          i"""ae.fragment_index = e.matched_fragment_index - $i OR"""
+          i"""
+          ae.fragment_index = e.matched_fragment_index - $i OR
+          """
         .mkString("\n")
 
     val lookAheadQueryFragment =
       (1 to options.fragmentLookupRange.lookAhead)
         .map: i =>
-          i"""ae.fragment_index = e.matched_fragment_index + $i OR"""
+          i"""
+          ae.fragment_index = e.matched_fragment_index + $i OR
+          """
         .mkString("\n")
 
     client
@@ -120,9 +124,9 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
           INNER JOIN embeddings AS ae
           ON ae.document_id = e.document_id
           AND
-              $lookBackQueryFragment
-              $lookAheadQueryFragment
-              ae.fragment_index = e.matched_fragment_index
+            $lookBackQueryFragment
+            $lookAheadQueryFragment
+            ae.fragment_index = e.matched_fragment_index
           ORDER BY toUInt128(document_id), fragment_index, chunk_index
           LIMIT 1 BY document_id, fragment_index
           FORMAT JSONEachRow

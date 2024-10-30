@@ -52,127 +52,40 @@ import supportbot.context.*
 import supportbot.context.chat.*
 import java.util.UUID
 
-// TODO: context + documents CRUD
-
 object SupportBot extends ResourceApp.Forever:
   def run(args: List[String]): Resource[IO, Unit] =
     for
+      given AppConfig                 <- AppConfig.load.toResource
       _                               <- AppLogger.configure.toResource
       given SttpBackend               <- SttpBackend.resource
-      given ClickHouseClient[IO]       = SttpClickHouseClient(
-                                           ClickHouseClient.Config(
-                                             url = "http://localhost:8123",
-                                             username = "default",
-                                             password = "default",
-                                           ),
-                                         )
-      _                               <- ClickHouseMigrator
-                                           .migrate(
-                                             ClickHouseMigrator.Config(
-                                               databaseName = "default",
-                                              //  fresh = true,
-                                             ),
-                                           )
-                                           .toResource
+      given ClickHouseClient[IO]       = SttpClickHouseClient.of
       given ContextRepository[IO]     <- ClickHouseContextRepository.of.toResource
       given DocumentRepository[IO]    <- ClickHouseDocumentRepository.of.toResource
       given VectorStoreRepository[IO] <- ClickHouseVectorStore.of.toResource
-      given OpenAI                     = OpenAI("ollama", uri"http://localhost:11434/v1")
-      given ChatCompletionService[IO]  = SttpOpenAIChatCompletionService(
-                                           model = Model.Llama31,
-                                         )
-      given EmbeddingService[IO]       = SttpOpenAIEmbeddingService(
-                                           model = Model.SnowflakeArcticEmbed,
-                                         )
+      (
+        given ChatCompletionService[IO],
+        given EmbeddingService[IO],
+      )                                = inferenceServicesOf
+      given IngestionService[IO]      <- ClickHouseIngestionService.of.toResource
 
-      // offline - parsing and indexing
-      // TODO: remove it from here
-      _                               <- createLocalPdfEmbeddings(
-                                           File("./content/SAFE3 - Support Guide-v108-20240809_102738.pdf"),
-                                         ).toResource
+      // state-changing side effects
+      _ <- ClickHouseMigrator.migrate().toResource
+      _ <- Fixtures.loadFixtures.toResource
 
       given ChatService <- ChatService.of()
       contextController <- ContextController.of()
+      homeController     = HomeController()
 
       _ <- httpApp(
              controllers = Vector(
                contextController,
-               HomeController,
+               homeController,
              ),
            )
     yield ()
 
-  // TODO: move to some ingestion service
-  def createLocalPdfEmbeddings(
-    file: File,
-  )(using
-    vectorStore: VectorStoreRepository[IO],
-    embeddingService: EmbeddingService[IO],
-    contextRepository: ContextRepository[IO],
-    documentRepository: DocumentRepository[IO],
-  ) =
-    // TODO: hardcoded
-    val contextId       = ContextId(UUID.fromString("f47b3b3e-0b3b-4b3b-8b3b-3b3b3b3b3b3b"))
-    val documentId      = DocumentId(UUID.fromString("f47b3b3e-0b3b-4b3b-8b3b-3b3b3b3b3b3b"))
-    val documentName    = DocumentName(file.getName)
-    val documentVersion = DocumentVersion(1)
-
-    vectorStore
-      .documentEmbeddingsExists(documentId)
-      .ifM(
-        IO.println(s"Embeddings for document $documentId already exists. Skipping the chunking and indexing."),
-        for
-          _ <- IO.println("(Re)creating context and document")
-
-          _ <- contextRepository.createOrUpdate(
-                 ContextInfo(
-                   id = contextId,
-                   name = "Support",
-                   description = "Support context",
-                   promptTemplate = PromptTemplate.default,
-                   chatModel = Model.Llama31,
-                   embeddingsModel = Model.SnowflakeArcticEmbed,
-                 ),
-               )
-
-          _               <- IO.println("Chunking PDF")
-          // fragments       <- LocalPDFDocumentLoader.loadPDF(file)
-          fragments       <- LocalLangChain4jIngestion.loadPDF(file.toPath, Model.SnowflakeArcticEmbed.contextLength)
-          fragmentsToEmbed = fragments
-
-          _       <- IO.println(s"Creating document $documentId with ${fragmentsToEmbed.size} chunks")
-          document = Document.Ingested(
-                       info = Document.Info(
-                         id = documentId,
-                         contextId = contextId,
-                         name = documentName,
-                         description = "Support document",
-                         version = documentVersion,
-                         `type` = "PDF",
-                         metadata = Map.empty,
-                       ),
-                       fragments = fragmentsToEmbed,
-                     )
-          _       <- documentRepository.createOrUpdate(document.info)
-
-          // _ <- IO.println(s"Fragments: $fragmentsToEmbed")
-          _               <- IO.println(s"Creating embeddings for ${fragmentsToEmbed.size} chunks. It may take a while...")
-          indexEmbeddings <- embeddingService.createIndexEmbeddings(document)
-          _               <- IO.println(s"Created ${indexEmbeddings.size} embeddings.")
-          _               <- vectorStore.store(indexEmbeddings)
-
-          _        <- IO.println("Retrieving context")
-          contexts <- contextRepository.getAll
-          _        <- IO.println(s"Contexts: $contexts")
-
-          _ <- IO.println("Retrieving documents")
-          _ <- contexts.traverse: ctx =>
-                 documentRepository
-                   .getAll(ctx.id)
-                   .flatMap: documents =>
-                     IO.println(s"Documents for context ${ctx.id}: $documents")
-        yield (),
-      )
-
-// Document f47b3b3e-0b3b-4b3b-8b3b-3b3b3b3b3b3b embedding exists: false
-// supportbot.clickhouse.ClickHouseClient$Error$QueryFailed: Code: 62. DB::Exception: Cannot parse expression of type Array(Float32) here: [-0.0051364605, -0.03613305, -0.0055216765, 0.03955842, 0.03655444, -0.01854114, 0.023542129, -0.018183189, -0.0041799336, -4.7423202E-4, 0.020579364, -0.012071: While executing ValuesBlockInputFormat. (SYNTAX_ERROR) (version 24.3.12.75 (official build))
+  private def inferenceServicesOf(using AppConfig, SttpBackend) =
+    AppConfig.get.inferenceEngine match
+      case InferenceEngine.OpenAIOllama(url) =>
+        given OpenAI = OpenAI("ollama", uri"$url")
+        (SttpOpenAIChatCompletionService(), SttpOpenAIEmbeddingService())

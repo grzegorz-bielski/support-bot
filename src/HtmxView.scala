@@ -14,9 +14,12 @@ trait HtmxView:
   lazy val `hx-delete`: HtmxAttr   = attr("hx-delete")
   lazy val `hx-boost`: HtmxAttr    = attr("hx-boost")
   lazy val `hx-ext`: HtmxAttr      = attr("hx-ext")
+  lazy val `hx-encoding`: HtmxAttr = attr("hx-encoding")
   lazy val `sse-connect`: HtmxAttr = attr("sse-connect")
   lazy val `sse-swap`: HtmxAttr    = attr("sse-swap")
   lazy val `sse-close`: HtmxAttr   = attr("sse-close")
+
+  lazy val dialog = tag("dialog")
 
   def appLink(path: String, child: Modifier, attrs: Modifier*): TypedTag[String] =
     val allAttrs = Seq(

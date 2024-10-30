@@ -14,21 +14,19 @@ import sttp.openai.OpenAIExceptions.OpenAIException
 import sttp.openai.requests.completions.chat.ChatRequestBody.{ChatBody, ChatCompletionModel}
 import sttp.openai.requests.completions.chat.message.*
 
-final class SttpOpenAIChatCompletionService(model: Model)(using
+final class SttpOpenAIChatCompletionService(using
   backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
   openAIProtocol: OpenAI,
 ) extends ChatCompletionService[IO]:
   import SttpOpenAIChatCompletionService.*
 
-  private val chatModel = ChatCompletionModel.CustomChatCompletionModel(model.name)
-
   private val choicesAmount = 1
 
-  def chatCompletion(prompt: Prompt): Stream[IO, ChatChunkResponse] =
+  def chatCompletion(prompt: Prompt, model: Model): Stream[IO, ChatChunkResponse] =
     Stream
       .eval:
         openAIProtocol
-          .createStreamedChatCompletion[IO](createChatBody(prompt))
+          .createStreamedChatCompletion[IO](createChatBody(prompt, model))
           .send(backend)
           .map(_.body)
           .rethrow
@@ -39,9 +37,9 @@ final class SttpOpenAIChatCompletionService(model: Model)(using
             // assuming only one choice (configured by `choicesAmount`)
             response.choices.headOption.flatMap(_.delta.content).getOrElse("")
 
-  private def createChatBody(prompt: Prompt) =
+  private def createChatBody(prompt: Prompt, model: Model) =
     ChatBody(
-      model = chatModel,
+      model = ChatCompletionModel.CustomChatCompletionModel(model.name),
       messages = bodyMessages(prompt),
       n = choicesAmount.some,
       tools = Some(

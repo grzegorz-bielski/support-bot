@@ -1,7 +1,7 @@
 app-dev:
     #!/usr/bin/env bash
     echo "Running local dev server"
-    export ENV=local
+    export ENV=Local
     (trap 'kill 0' SIGINT; scala-cli run ./ --restart & npm --prefix ./ run tailwind:watch)
 
 app-clean:
@@ -10,5 +10,5 @@ app-clean:
 test:
     #!/usr/bin/env bash
     echo "Running tests"
-    export ENV=test
+    export ENV=Test
     scala-cli test ./

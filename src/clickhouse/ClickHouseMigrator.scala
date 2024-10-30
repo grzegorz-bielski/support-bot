@@ -136,8 +136,14 @@ object ClickHouseMigrator:
     for given Logger[IO] <- Slf4jLogger.create[IO]
     yield ClickHouseMigrator(config)
 
-  def migrate(config: Config)(using ClickHouseClient[IO]): IO[Unit] =
-    of(config).flatMap(_.migrate(AllMigrations))
+  def migrate()(using ClickHouseClient[IO], AppConfig): IO[Unit] =
+    val chConfig       = AppConfig.get.clickhouse
+    val migratorConfig = ClickHouseMigrator.Config(
+      databaseName = chConfig.database,
+      fresh = chConfig.resetOnStart,
+    )
+
+    of(migratorConfig).flatMap(_.migrate(AllMigrations))
 
   /** Configuration for the ClickHouse migrator.
     *

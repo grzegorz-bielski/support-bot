@@ -53,17 +53,15 @@ final class ChatService(
       queryId: QueryId,
       promptTemplate: PromptTemplate,
       retrieveOptions: RetrieveOptions,
+      chatModel: Model,
+      embeddingsModel: Model
     ): IO[Unit] =
     for
-      queryEmbeddings     <- embeddingService.createQueryEmbeddings(Chunk(query.content, index = 0))
-      retrievedEmbeddings <- vectorStore.retrieve(
-        queryEmbeddings, 
-        retrieveOptions,
-        // RetrieveOptions(
-        //   topK = 15, 
-        //   fragmentLookupRange = LookupRange(5, 5)
-        // ),
-      ).compile.toVector
+      queryEmbeddings     <- embeddingService.createQueryEmbeddings(
+        chunk = Chunk(query.content, index = 0), 
+        model = embeddingsModel
+      )
+      retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings, retrieveOptions).compile.toVector
 
       // _ <- info"Retrieved embeddings: $retrievedEmbeddings"
 
@@ -82,7 +80,7 @@ final class ChatService(
         )
 
       _ <- chatCompletionService
-             .chatCompletion(prompt)
+             .chatCompletion(prompt, model = chatModel)
              .map: chatMsg =>
                PubSub.Message(
                  topicId = topicId,
