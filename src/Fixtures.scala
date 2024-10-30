@@ -14,7 +14,7 @@ import supportbot.context.*
 
 // dev only test data
 object Fixtures:
-  def loadFixtures(using
+  def loadFixtures()(using
     VectorStoreRepository[IO],
     ContextRepository[IO],
     IngestionService[IO],

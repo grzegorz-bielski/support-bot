@@ -70,7 +70,7 @@ object SupportBot extends ResourceApp.Forever:
 
       // state-changing side effects
       _ <- ClickHouseMigrator.migrate().toResource
-      _ <- Fixtures.loadFixtures.toResource
+      _ <- Fixtures.loadFixtures().toResource
 
       given ChatService <- ChatService.of()
       contextController <- ContextController.of()

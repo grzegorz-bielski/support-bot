@@ -2,6 +2,7 @@ package supportbot
 package context
 
 import fs2.{Chunk as _, *}
+import fs2.io.*
 import fs2.io.file.Files
 import cats.effect.*
 import cats.syntax.all.*
@@ -22,17 +23,21 @@ import java.util.UUID
 import context.chat.*
 import supportbot.rag.vectorstore.{VectorStoreRepository, RetrieveOptions, LookupRange}
 import supportbot.rag.DocumentRepository
+import supportbot.rag.ingestion.IngestionService
 
 final class ContextController(using
   logger: Logger[IO],
   contextRepository: ContextRepository[IO],
   documentRepository: DocumentRepository[IO],
+  ingestionService: IngestionService[IO],
   chatService: ChatService,
   appConfig: AppConfig,
 ) extends TopLevelHtmxController:
   import ContextController.*
 
   protected val prefix = "contexts"
+
+  private val fileFieldName = "file"
 
   protected val routes = IO:
     HttpRoutes.of[IO]:
@@ -62,6 +67,7 @@ final class ContextController(using
                              uploadUrl = s"/$prefix/${context.id}/documents/upload",
                              chatPostUrl = s"/$prefix/${context.id}/chat/query",
                              documents = documents,
+                             fileFieldName = fileFieldName,
                            ),
                          )
           yield response
@@ -116,34 +122,24 @@ final class ContextController(using
         getContextOrNotFound(contextId): context =>
           EntityDecoder.mixedMultipartResource[IO]().use: decoder => 
             req.decodeWith(decoder, strict = true): multipart =>
+              val uploadedDocuments = multipart.parts
+                .filter(_.name.contains(fileFieldName))
+                .parTraverse: part =>
+                  val documentName = DocumentName(part.filename.getOrElse("unknown"))
 
-              val files = multipart.parts
-                .filter(_.name.contains("file"))
-                .traverse: part =>
-                  // Files[IO].writeAll(part.body, java.nio.file.Paths.get(s"/tmp/${part.filename.getOrElse("unknown")}"))
-                  // part.body.compile.to(Array)
-                  // val kek = fs2.io.toInputStream
+                  ingestionService.ingest(
+                    IngestionService.Input(
+                      contextId = context.id,
+                      documentName = documentName,
+                      embeddingsModel = context.embeddingsModel,
+                      content = part.body,
+                    ),
+                  ).as(documentName)
 
-                  ???
-
-              println("multipart: " + multipart)
-
-              Ok("Uploaded")
-              // multipart.parts.traverse: part =>
-              //   part.name.traverse: name =>
-              //     part.bodyText.compile.string.map: content =>
-              //       // val picture = multipart.parts.find(_.name.contains("picture"))
-              //       info"Part name: $name, content: $content"
-          // for
-          //   // multipart <- req.as[Multipart[IO]]
-          //   // _         <- multipart.parts.traverse: part =>
-          //                 // info"part: ${part}"
-          //                 //  part.name.traverse: name =>
-          //                 //    part.bodyText.compile.string.map: content =>
-          //                 //      info"Part name: $name, content: $content"
-
-          //   res <- Ok()
-          // yield res
+              uploadedDocuments.flatMap: docs => 
+                Ok(
+                  ContextView.uploadedDocuments(docs),
+                )
 
   private def getContextOrNotFound(contextId: ContextId)(fn: ContextInfo => IO[Response[IO]]): IO[Response[IO]] =
     contextRepository
@@ -157,6 +153,7 @@ object ContextController:
     ContextRepository[IO],
     DocumentRepository[IO],
     ChatService,
+    IngestionService[IO],
     AppConfig,
   ): Resource[IO, ContextController] =
     for given Logger[IO] <- Slf4jLogger.create[IO].toResource

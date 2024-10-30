@@ -17,13 +17,23 @@ object ContextView extends HtmxView:
     chatPostUrl: String,
     uploadUrl: String,
     documents: Vector[Document.Info],
+    fileFieldName: String,
   )(using AppConfig) = RootLayoutView.view(
     div(
-      configMenu(uploadUrl = uploadUrl, documents),
+      configMenu(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName),
+      div(cls := "divider", aria.hidden := true),
       ChatView.messages(),
       ChatView.chatForm(postUrl = chatPostUrl),
     ),
   )
+
+  def uploadedDocuments(docs: Vector[DocumentName]) = 
+    ul(
+      docs.map: doc =>
+        li(
+          doc,
+        ),
+    )
 
   def contextsOverview(contexts: Vector[ContextInfo])(using AppConfig) =
     RootLayoutView.view(
@@ -64,10 +74,10 @@ object ContextView extends HtmxView:
       ),
     )
 
-  private def configMenu(uploadUrl: String, documents: Vector[Document.Info]) =
+  private def configMenu(uploadUrl: String, documents: Vector[Document.Info], fileFieldName: String) =
     div(
       cls := "grid grid-cols-1 md:grid-cols-2 gap-4 py-4",
-      div(knowledgeBase(uploadUrl, documents)),
+      div(knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName)),
       div(promptSettings()),
       div(retrievalSettings()),
     )
@@ -146,6 +156,7 @@ object ContextView extends HtmxView:
 
   private def knowledgeBase(
     uploadUrl: String,
+    fileFieldName: String,
     documents: Vector[Document.Info],
   ) =
     collapse(
@@ -167,7 +178,10 @@ object ContextView extends HtmxView:
           modalId = "uploadModal",
           buttonTitle = "Upload more",
           modalTitle = "Upload your files",
-          modalContent = uploadForm(uploadUrl = uploadUrl),
+          modalContent = uploadForm(
+            uploadUrl = uploadUrl,
+            fileFieldName = fileFieldName,
+          ),
           buttonExtraClasses = Vector("btn-secondary block ml-auto"),
         ),
       ),
@@ -194,8 +208,8 @@ object ContextView extends HtmxView:
           form(
             method := "dialog",
             button(
-              cls                := "btn btn-sm btn-circle btn-ghost absolute right-2 top-2",
-              attr("aria-title") := "close",
+              cls        := "btn btn-sm btn-circle btn-ghost absolute right-2 top-2",
+              aria.label := "close",
               "✕",
             ),
           ),
@@ -210,6 +224,7 @@ object ContextView extends HtmxView:
   // https://http4s.org/v1/docs/multipart.html
   private def uploadForm(
     uploadUrl: String,
+    fileFieldName: String,
   )            =
     form(
       id            := "upload-form",
@@ -237,11 +252,11 @@ object ContextView extends HtmxView:
           input(
             id           := "dropzone-file",
             `type`       := "file",
-            attr("name") := "file",
+            attr("name") := fileFieldName,
             cls          := "hidden",
             multiple     := "true",
           ),
-        )
+        ),
       ),
       button(
         cls := "btn btn-primary block ml-auto",
@@ -278,11 +293,11 @@ object ContextView extends HtmxView:
     import scalatags.Text.svgAttrs.*
 
     svg(
-      cls                 := "w-8 h-8 mb-4 text-gray-500 dark:text-gray-400",
-      attr("aria-hidden") := "true",
-      xmlns               := "http://www.w3.org/2000/svg",
-      fill                := "none",
-      viewBox             := "0 0 20 16",
+      cls         := "w-8 h-8 mb-4 text-gray-500 dark:text-gray-400",
+      aria.hidden := true,
+      xmlns       := "http://www.w3.org/2000/svg",
+      fill        := "none",
+      viewBox     := "0 0 20 16",
       path(
         stroke                  := "currentColor",
         attr("stroke-linecap")  := "round",
@@ -298,6 +313,7 @@ object ContextView extends HtmxView:
 
     svg(
       xmlns                := "http://www.w3.org/2000/svg",
+      aria.hidden          := true,
       fill                 := "none",
       viewBox              := "0 0 24 24",
       attr("stroke-width") := "1.5",
