@@ -142,6 +142,11 @@ final class ContextController(using
                       )
                       .as(documentName)
 
+                // TODO:
+                // - list of files to upload
+                // - each list item gets in-progress bar
+                // - after all items are uploaded the documents list is refreshed
+
                 uploadedDocuments.flatMap: docs =>
                   Ok(
                     ContextView.uploadedDocuments(docs),

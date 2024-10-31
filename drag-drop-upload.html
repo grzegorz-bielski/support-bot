@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/1.9.10/htmx.min.js"></script>
+    <script src="https://cdn.tailwindcss.com/3.3.0"></script>
+    <style>
+        /* Base styles that don't depend on Tailwind */
+        .file-drop-zone {
+            border: 2px dashed #E5E7EB;
+            border-radius: 0.5rem;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.3s ease;
+            position: relative;
+        }
+        
+        .file-drop-zone:hover,
+        .file-drop-zone.drag-active {
+            border-color: #3B82F6;
+        }
+        
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+
+        .file-input {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .file-list-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background-color: #F9FAFB;
+            border-radius: 0.375rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .file-name {
+            font-size: 0.875rem;
+            color: #374151;
+        }
+
+        .file-size {
+            font-size: 0.75rem;
+            color: #6B7280;
+            margin-left: auto;
+        }
+
+        .upload-button {
+            width: 100%;
+            padding: 0.5rem 1rem;
+            background-color: #2563EB;
+            color: white;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+        }
+
+        .upload-button:hover {
+            background-color: #1D4ED8;
+        }
+
+        .progress-container {
+            margin: 1rem 0;
+        }
+
+        .progress-label {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            background-color: #DBEAFE;
+            color: #2563EB;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-track {
+            background-color: #DBEAFE;
+            border-radius: 0.25rem;
+            overflow: hidden;
+            height: 0.5rem;
+        }
+
+        .progress-bar {
+            background-color: #2563EB;
+            height: 100%;
+            width: 0;
+        }
+    </style>
+</head>
+<body style="min-height: 100vh; background-color: #F9FAFB; padding: 2rem;">
+    <div style="max-width: 42rem; margin: 0 auto;">
+        <form class="space-y-6"
+              hx-encoding="multipart/form-data"
+              hx-post="/upload"
+              hx-target="#upload-response">
+            
+            <!-- Drag & Drop Zone -->
+            <div id="drop-zone" class="file-drop-zone">
+                <input type="file" 
+                       id="file-input"
+                       name="files[]" 
+                       multiple
+                       class="file-input"
+                       accept="*/*">
+                
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    <!-- Upload Icon -->
+                    <div style="margin: 0 auto; width: 3rem; height: 3rem; color: #9CA3AF;">
+                        <svg stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                            <path d="M28 8H12a4 4 0 00-4 4v20m0 0v4a4 4 0 004 4h20a4 4 0 004-4V28m-4-4l-8-8-4 4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    
+                    <!-- Text Content -->
+                    <div>
+                        <p style="font-size: 1.125rem; font-weight: 500; color: #111827;">
+                            Drop files here or click to upload
+                        </p>
+                        <p style="font-size: 0.875rem; color: #6B7280;">
+                            Drag and drop your files anywhere or click to browse
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div id="progress-container" class="progress-container" style="display: none;">
+                <span class="progress-label">Uploading</span>
+                <div class="progress-track">
+                    <div id="progress-bar" class="progress-bar"></div>
+                </div>
+            </div>
+
+            <!-- File List -->
+            <div id="file-list"></div>
+
+            <!-- Upload Button -->
+            <button type="submit" class="upload-button">
+                Upload Files
+            </button>
+
+            <!-- Upload Response Area -->
+            <div id="upload-response"></div>
+        </form>
+    </div>
+
+    <script>
+        function setupFileDrop() {
+            const dropZone = document.getElementById('drop-zone');
+            const fileList = document.getElementById('file-list');
+            const progressBar = document.getElementById('progress-bar');
+            const progressContainer = document.getElementById('progress-container');
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, highlight);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, unhighlight);
+            });
+
+            function highlight(e) {
+                dropZone.classList.add('drag-active');
+            }
+
+            function unhighlight(e) {
+                dropZone.classList.remove('drag-active');
+            }
+
+            dropZone.addEventListener('drop', handleDrop);
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                handleFiles(files);
+            }
+
+            function handleFiles(files) {
+                fileList.innerHTML = '';
+                [...files].forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = 'file-list-item';
+                    
+                    const icon = document.createElement('span');
+                    icon.style.color = '#6B7280';
+                    icon.innerHTML = '📄';
+                    
+                    const name = document.createElement('span');
+                    name.className = 'file-name';
+                    name.textContent = file.name;
+                    
+                    const size = document.createElement('span');
+                    size.className = 'file-size';
+                    size.textContent = formatFileSize(file.size);
+                    
+                    item.appendChild(icon);
+                    item.appendChild(name);
+                    item.appendChild(size);
+                    fileList.appendChild(item);
+                });
+            }
+
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            // Handle file input change
+            document.getElementById('file-input').addEventListener('change', function(e) {
+                handleFiles(e.target.files);
+            });
+
+            // HTMX event handlers for upload progress
+            document.body.addEventListener('htmx:beforeSend', function(evt) {
+                progressContainer.style.display = 'block';
+                progressBar.style.width = '0%';
+            });
+
+            document.body.addEventListener('htmx:afterRequest', function(evt) {
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                }, 500);
+            });
+
+            // Simulate upload progress
+            document.body.addEventListener('htmx:xhr:progress', function(evt) {
+                if (evt.detail.loaded && evt.detail.total) {
+                    const percent = (evt.detail.loaded / evt.detail.total) * 100;
+                    progressBar.style.width = `${percent}%`;
+                }
+            });
+        }
+
+        // Initialize when the DOM is loaded
+        document.addEventListener('DOMContentLoaded', setupFileDrop);
+    </script>
+</body>
+</html>
