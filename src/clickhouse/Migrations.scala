@@ -49,11 +49,12 @@ lazy val AllMigrations = Vector(
                 document_id UUID,                                          -- unique identifier of the document
                 fragment_index Int64,                                      -- index of the fragment (like page) in the document, if there is no clear separation of fragments in source document, it will be equal to chunk_index
                 chunk_index Int64,                                         -- index of the chunk in the fragment, if there is no clear separation into fragments in source document, it will be always 0
-                value String,                                              -- base64 encoded value (likely just text) of the chunk, TODO: not base64 encode it so it's usable for full text search?
+                value String,                                              -- value (likely just text) of the chunk
                 metadata Map(String, String),                              -- any additional metadata of the chunk
                 embedding Array(Float32),                                  -- embedding vector of the chunk
                 updated_at DateTime DEFAULT now(),
-                INDEX ann_idx embedding TYPE usearch('cosineDistance')     -- ANN index for fast retrieval of embeddings similar according to cosine distance
+                INDEX ann_idx embedding TYPE usearch('cosineDistance'),    -- ANN index for fast retrieval of embeddings similar according to cosine distance
+                INDEX inv_idx value TYPE inverted(),                       -- inverted index for full-text search
             )
             ENGINE = MergeTree()                                           -- not replacing, as we want to keep all embeddings for a given fragment_index
             ORDER BY (toUInt128(context_id), toUInt128(document_id), fragment_index, chunk_index) -- CH's UUIDs are sorted by their second half, so we need to convert them to UInt128 for proper ordering

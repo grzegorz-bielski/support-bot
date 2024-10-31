@@ -38,6 +38,7 @@ object ClickHouseClient:
     output_format_json_quote_64bit_integers: Option[IntBool] = Some(0),
     allow_experimental_usearch_index: Option[IntBool] = Some(1),
     enable_http_compression: Option[IntBool] = Some(1),
+    allow_experimental_inverted_index: Option[IntBool] = Some(1),
   ) derives Monoid:
     def asMap: Map[String, String] =
       productIterator.zipWithIndex
