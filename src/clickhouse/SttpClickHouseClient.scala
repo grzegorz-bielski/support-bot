@@ -23,6 +23,7 @@ trait ClickHouseClient[F[_]]:
   def streamQueryJson[T](query: String)(using qs: QuerySettings, codec: JsonValueCodec[T]): Stream[F, T]
   def streamQueryTextLines(query: String)(using QuerySettings): Stream[F, String]
   def executeQuery(query: String)(using QuerySettings): F[Unit]
+  def healthCheck(using QuerySettings): IO[Unit]
 
 object ClickHouseClient:
   // uses 0 | 1 deliberately to match the CH settings conventions
@@ -32,11 +33,17 @@ object ClickHouseClient:
 
   given QuerySettings = QuerySettings.default
 
-  // this uses snake_case deliberately to match the CH setting names 1:1
+  /** ClickHouse query settings to be provided as query parameters through HTTP API
+    *
+    * Uses snake_case deliberately to match the CH setting names 1:1
+    */
   final case class QuerySettings(
     wait_end_of_query: Option[IntBool] = None,
     output_format_json_quote_64bit_integers: Option[IntBool] = Some(0),
-    allow_experimental_usearch_index: Option[IntBool] = Some(1),
+    // allow_experimental_usearch_index: Option[IntBool] = Some(1), // old
+    allow_experimental_vector_similarity_index: Option[IntBool] = Some(1),
+    // allow_experimental_inverted_index: Option[IntBool] = Some(1),// old
+    allow_experimental_full_text_index: Option[IntBool] = Some(1),
     enable_http_compression: Option[IntBool] = Some(1),
   ) derives Monoid:
     def asMap: Map[String, String] =
@@ -91,6 +98,16 @@ final class SttpClickHouseClient(config: ClickHouseClient.Config)(using backend:
       .through(text.utf8.decode)
       .through(text.lines)
 
+  def healthCheck(using QuerySettings): IO[Unit] =
+    requestOf("SELECT 1")
+      .response(asString)
+      .send(backend)
+      .map: response =>
+        response.body
+          .flatMap(_.trim.toIntOption.toRight("Unexpected response"))
+          .bimap(ClickHouseClient.Error.QueryFailed.apply, _ => ())
+      .rethrow
+
   private def requestOf(query: String)(using settings: QuerySettings) =
     val url =
       uri"${config.url}".addParams(settings.asMap)
@@ -107,7 +124,7 @@ final class SttpClickHouseClient(config: ClickHouseClient.Config)(using backend:
 
 object SttpClickHouseClient:
   def of(using AppConfig, SttpBackend) =
-    val chConf = AppConfig.get.clickhouse 
+    val chConf = AppConfig.get.clickhouse
 
     SttpClickHouseClient(
       config = ClickHouseClient.Config(

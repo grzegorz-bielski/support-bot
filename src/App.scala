@@ -37,11 +37,11 @@ package supportbot
 import cats.syntax.all.*
 import cats.effect.syntax.all.*
 import cats.effect.*
-import sttp.client4.httpclient.fs2.HttpClientFs2Backend
-import com.github.plokhotnyuk.jsoniter_scala.core.*
 import sttp.openai.OpenAI
 import sttp.model.Uri.*
-import java.io.File
+import org.typelevel.log4cats.*
+import org.typelevel.log4cats.slf4j.*
+import org.typelevel.log4cats.syntax.*
 
 import supportbot.rag.*
 import supportbot.rag.ingestion.*
@@ -50,13 +50,13 @@ import supportbot.home.*
 import supportbot.clickhouse.*
 import supportbot.context.*
 import supportbot.context.chat.*
-import java.util.UUID
 
 object SupportBot extends ResourceApp.Forever:
   def run(args: List[String]): Resource[IO, Unit] =
     for
       given AppConfig                 <- AppConfig.load.toResource
       _                               <- AppLogger.configure.toResource
+      given Logger[IO]                <- Slf4jLogger.create[IO].toResource
       given SttpBackend               <- SttpBackend.resource
       given ClickHouseClient[IO]       = SttpClickHouseClient.of
       given ContextRepository[IO]     <- ClickHouseContextRepository.of.toResource
@@ -67,6 +67,8 @@ object SupportBot extends ResourceApp.Forever:
         given EmbeddingService[IO],
       )                                = inferenceServicesOf
       given IngestionService[IO]      <- ClickHouseIngestionService.of.toResource
+
+      _ <- runInitialHealthChecks().toResource
 
       // state-changing side effects
       _ <- ClickHouseMigrator.migrate().toResource
@@ -83,6 +85,19 @@ object SupportBot extends ResourceApp.Forever:
              ),
            )
     yield ()
+
+  private def runInitialHealthChecks()(using clickHouseClient: ClickHouseClient[IO], logger: Logger[IO]) =
+    val healthChecks = Vector(
+      "ClickHouse" -> clickHouseClient.healthCheck,
+    )
+
+    healthChecks
+      .traverse: (name, check) =>
+        check.attempt.flatMap:
+          case Right(_) => info"$name is healthy"
+          case Left(e)  =>
+            logger.error(e)(s"$name is unhealthy, check your connection. Stopping the app") *> IO.raiseError(e)
+      .void
 
   private def inferenceServicesOf(using AppConfig, SttpBackend) =
     AppConfig.get.inferenceEngine match

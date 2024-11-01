@@ -3,7 +3,8 @@ name: support-bot
 services:
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24.3.12-alpine
+    # image: clickhouse/clickhouse-server:24.9.2.42-alpine
+    image: clickhouse/clickhouse-server:head-alpine
     ports:
       - "8123:8123"
     ulimits:
@@ -19,3 +20,5 @@ services:
 volumes:
   clickhouse-data:
   clickhouse-logs:
+
+

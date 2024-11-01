@@ -2,27 +2,38 @@ package supportbot
 package clickhouse
 
 extension (underlying: Map[String, String])
-  def toClickHouseMap: String =
+  inline def toClickHouseMap: String =
     s"{${underlying.toVector.map((k, v) => s"'$k':'$v'").mkString(", ")}}"
 
-
 extension (underlying: String)
-  def toClickHouseString: String =
-    // see CH escaping rules: 
-    // https://clickhouse.com/docs/en/sql-reference/syntax#string
+  inline def toClickHouseString: String =
+    StringEscapeUtils.toClickHouseString(underlying)
 
-    // TODO: test it
-    val escaped = underlying
-      .replace("\\", "\\\\") // backslash
-      .replace("'", "\\'") // single quote
-      .replace("\n", "\\n") // newline
-      .replace("\r", "\\r") // carriage return
-      .replace("\t", "\\t") // tab
-      .replace("\b", "\\b") // backspace
-      .replace("\f", "\\f") // form feed
-      .replace("\u0000", "\\0") // null byte
-      .replace(raw"\a", "\\a") // bell
-      .replace(raw"\v", "\\v") // vertical tab
-      .replace(raw"\xHH", "\\xHH") // hex escape
+private[clickhouse] object StringEscapeUtils:
+  // this _does not_ handle the hex escape
+  def toClickHouseString(str: String): String =
+    val sb = StringBuilder()
 
-    s"'$escaped'"
+    sb.append('\'')
+    str.foreach: c =>
+      staticEscapeMappings.get(c) match
+        case Some(escaped) => sb.append(escaped)
+        case None          => sb.append(c)
+    sb.append('\'')
+
+    sb.result()
+
+  // see CH escaping rules:
+  // https://clickhouse.com/docs/en/sql-reference/syntax#string
+  lazy val staticEscapeMappings = Map(
+    '\\'     -> "\\\\",
+    '\''     -> "\\'",
+    '\n'     -> "\\n",
+    '\r'     -> "\\r",
+    '\t'     -> "\\t",
+    '\b'     -> "\\b",
+    '\f'     -> "\\f",
+    '\u0000' -> "\\0",
+    '\u0007' -> "\\a",
+    '\u000B' -> "\\v",
+  )

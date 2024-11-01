@@ -11,7 +11,7 @@ import org.typelevel.log4cats.*
 import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
 import unindent.*
-import java.util.Base64
+// import java.util.Base64
 import java.util.UUID
 
 import supportbot.clickhouse.*
@@ -34,11 +34,11 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .map: embedding =>
         import embedding.*
 
-        val metadata     = chunk.metadata.toClickHouseMap
-        val embeddings   = s"[${value.mkString(", ")}]"
-        val encodedValue = s"'${base64TextEncode(chunk.text)}'"
+        val metadata        = chunk.metadata.toClickHouseMap
+        val embeddings      = s"[${value.mkString(", ")}]"
+        val embeddingsValue = chunk.text.toClickHouseString
 
-        s"(toUUID('$contextId'), toUUID('$documentId'), $fragmentIndex, ${chunk.index}, $encodedValue, $metadata, $embeddings)"
+        s"(toUUID('$contextId'), toUUID('$documentId'), $fragmentIndex, ${chunk.index}, $embeddingsValue, $metadata, $embeddings)"
       .mkString(",\n")
 
     val insertQuery =
@@ -120,7 +120,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
             ae.chunk_index as chunk_index,
             matched_fragment_index,
             matched_chunk_index,
-            base64Decode(ae.value) AS value,
+            ae.value AS value,
             ae.metadata as metadata,
             score
           FROM matched_embeddings AS e
@@ -146,12 +146,12 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
           score = row.score,
         )
 
-  private def base64TextEncode(input: String): String =
-    val charset      = "UTF-8"
-    val encoder      = Base64.getEncoder // RFC4648 as on the decoder side in CH
-    val encodedBytes = encoder.encode(input.getBytes(charset))
+  // private def base64TextEncode(input: String): String =
+  //   val charset      = "UTF-8"
+  //   val encoder      = Base64.getEncoder // RFC4648 as on the decoder side in CH
+  //   val encodedBytes = encoder.encode(input.getBytes(charset))
 
-    String(encodedBytes, charset)
+  //   String(encodedBytes, charset)
 
 object ClickHouseVectorStore:
   def of(using client: ClickHouseClient[IO]): IO[ClickHouseVectorStore] =
