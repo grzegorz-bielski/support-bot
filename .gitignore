@@ -14,4 +14,4 @@ node_modules
 
 content
 app/resources/static/generated.css
-app/resources/static/elements.js*
+app/resources/static/bundle.js*
