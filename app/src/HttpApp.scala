@@ -37,11 +37,14 @@ def httpApp(controllers: Vector[TopLevelController])(using config: AppConfig): R
 def errorHandler: Logger[IO] ?=> PartialFunction[Throwable, IO[Response[IO]]] =
   err => Logger[IO].error(err)("An error occurred").as(Response[IO](Status.InternalServerError))
 
+// TODO:
+// - etags
+// - gzip
 final class StaticAssetsController(using Logger[IO], AppConfig) extends TopLevelController:
   def prefix = "static"
   def routes =
     if AppConfig.get.isDev then
-      warn"Using local resources".as(fileService[IO](FileService.Config("./resources/static")))
+      warn"Using local resources".as(fileService[IO](FileService.Config("./app/resources/static")))
     else
       // assuming production env - we use the resources embedded in the JAR
       info"Using embedded resources".as(resourceServiceBuilder[IO]("/static").toRoutes)

@@ -13,4 +13,5 @@ metals.sbt
 node_modules
 
 content
-resources/static/generated.css
+app/resources/static/generated.css
+app/resources/static/elements.js*

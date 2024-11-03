@@ -1,0 +1,29 @@
+{
+	"folders": [
+		{
+			"path": "app"
+		},
+		{
+			"path": "elements"
+		}
+	],
+	"settings": {
+		"files.watcherExclude": {
+			"**/target": true
+		},
+		"cSpell.words": [
+			"Htmx",
+			"scalatags",
+            "clickhouse",
+            "Htmx",
+            "Monoid",
+            "munit",
+            "Scalatags",
+            "Semigroup",
+            "Sttp",
+            "supportbot",
+            "tmpl",
+            "vectorstore"
+		]
+	}
+}

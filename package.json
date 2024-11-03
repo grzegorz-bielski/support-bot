@@ -1,19 +1,11 @@
 {
-    "name": "app",
-    "version": "1.0.0",
+    "name": "supportbot",
     "description": "",
     "main": "",
-    "scripts": {
-      "tailwind:watch": "tailwindcss -i ./src/input.css -o ./resources/static/generated.css --watch",
-      "tailwind:minify": "tailwindcss -i ./src/input.css -o ./resources/static/generated.css --minify"
-    },
+    "workspaces":[
+      "app"
+    ],
     "author": "",
-    "license": "ISC",
-    "devDependencies": {
-      "@tailwindcss/forms": "^0.5.9",
-      "@tailwindcss/typography": "^0.5.15",
-      "daisyui": "^4.12.13",
-      "tailwindcss": "^3.4.14"
-    }
+    "license": "APL-1.0"
   }
   
