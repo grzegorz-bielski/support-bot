@@ -21,6 +21,8 @@ trait HtmxView:
 
   lazy val dialog = tag("dialog")
 
+  lazy val fileUploader = tag("file-uploader")
+
   def appLink(path: String, child: Modifier, attrs: Modifier*): TypedTag[String] =
     val allAttrs = Seq(
       attr("href") := path,
