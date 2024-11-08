@@ -1,10 +1,9 @@
-// TODO:
-// - disable upload button if there are validation errors
+import { logger } from "./logger";
 
-type Nullable<T> = T | null | undefined;
 type HTMXProgressEvent = Event & {
   detail: { loaded: number; total: number; lengthComputable: number };
 };
+type ValidationResult = { valid: boolean; error?: string };
 
 class FileUploader extends HTMLElement {
   readonly #allowedFileTypes?: string[];
@@ -84,7 +83,7 @@ class FileUploader extends HTMLElement {
             <label 
               id="dropZone" 
               for="dropzone-file" 
-              class="form-control flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-base-100 transition-colors hover:border-gray-400"
+              class="form-control flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-base-100 transition-colors border-gray-300 hover:border-gray-400"
             >
               <span class="flex flex-col items-center justify-center pt-5 pb-6">
                 <span>${uploadIcon}</span>
@@ -134,49 +133,53 @@ class FileUploader extends HTMLElement {
   #handleDragOver = (e: DragEvent): void => {
     e.preventDefault();
     e.stopPropagation();
-
-    this.#dropZone?.classList.add("drag-over");
+    logger.info("handleDragOver")
+    this.#dropZone?.classList.add("bg-base-200");
   };
 
   #handleDragLeave = (e: DragEvent): void => {
     e.preventDefault();
     e.stopPropagation();
-
-    this.#dropZone?.classList.remove("drag-over");
+    logger.info("handleDragLeave")
+    this.#dropZone?.classList.remove("bg-base-200");
   };
 
   #handleDrop = (e: DragEvent): void => {
     e.preventDefault();
     e.stopPropagation();
+    logger.info("handleDrop")
+    this.#dropZone?.classList.remove("bg-base-200");
 
-    this.#dropZone?.classList.remove("drag-over");
+    // add DnD files to input
+    const [fileInput, files] = [this.#fileInput, e.dataTransfer?.files]
+    if (!fileInput || !files) return 
+    fileInput.files = files;
 
-    this.#addFiles(e.dataTransfer?.files);
+    this.#updateFileList();
   };
 
   #handleFileSelect = (): void => {
-    this.#addFiles(this.#fileInput?.files);
+    this.#updateFileList();
   };
 
   #handleFileRemove = (e: Event): void => {
     e.preventDefault();
     e.stopPropagation();
-    console.log("remove file", e);
+    logger.info("remove file", e);
     if (!e.target) return;
 
     const target = e.target as HTMLElement;
     const fileName = target.getAttribute("data-remove-file");
 
-    console.log("fileName", fileName);
+    logger.info("fileName", fileName);
 
     if (!fileName) return;
 
     this.#removeFileFromInput(fileName);
     this.#updateFileList();
-    this.#updateUploadButtonVisibility();
   };
 
-  #validateFile(file: File): { valid: boolean; error?: string } {
+  #validateFile(file: File): ValidationResult {
     if (this.#allowedFileTypes && !this.#allowedFileTypes.includes(file.type)) {
       return {
         valid: false,
@@ -196,14 +199,6 @@ class FileUploader extends HTMLElement {
     return { valid: true };
   }
 
-  #addFiles(files: Nullable<FileList>): void {
-    console.log("addFiles", files);
-
-    if (!files) return;
-
-    this.#updateFileList();
-  }
-
   #removeFileFromInput(fileName: String): void {
     const dataTransfer = new DataTransfer();
 
@@ -219,49 +214,53 @@ class FileUploader extends HTMLElement {
     }
   }
 
-  #updateUploadButtonVisibility(force?: boolean): void {
-    this.#uploadButton?.classList.toggle(
-      "btn-disabled",
-      this.#selectedFiles.length === 0
-    );
-  }
-
   #updateFileList(): void {
-    const fileList = this.#fileList
+    const fileList = this.#fileList;
     if (!fileList) return;
 
     fileList.innerHTML = "";
+    const validationResults: ValidationResult[] = [];
 
     for (const file of this.#selectedFiles) {
       const validationResult = this.#validateFile(file);
+      validationResults.push(validationResult);
 
-      const errorClasses = validationResult.error ? "bg-error text-error-500" : ""
+      const errorClasses = validationResult.error
+        ? "bg-error text-error-500"
+        : "";
 
+      // prettier-ignore
       const row = `
         <li class="flex justify-between items-center bg-base-200 rounded-box p-2 my-1 ${errorClasses}">
           <div class="text-sm overflow-auto">
             ${validationResult.error ? `<div class="mt-0.5 text-white">${validationResult.error}</div>` : ""}
             <div class="text-wrap break-words">${file.name} (${formatFileSize(file.size)})</div>
           </div>
-          <button class="btn btn-sm btn-outline btn-circle" data-remove-file="${file.name}">x</button>
+          <button class="btn btn-sm btn-outline btn-circle" data-remove-file="${
+            file.name
+          }">x</button>
         </li>
       `;
 
       fileList.insertAdjacentHTML("beforeend", row);
     }
 
-    this.#updateUploadButtonVisibility();
+    this.#uploadButton?.classList.toggle(
+      "btn-disabled",
+      this.#selectedFiles.length === 0 ||
+        !validationResults.every((vr) => vr.valid)
+    );
   }
 
   #handleProgress = (e: Event) => {
     const event = e as HTMXProgressEvent;
-    console.log("handleProgress", event);
-    const progress = (event.detail.loaded / event.detail.total) * 100
+    logger.info("handleProgress", event);
+    const progress = (event.detail.loaded / event.detail.total) * 100;
     this.#progress?.setAttribute("value", progress.toString());
-  }
+  };
 
   #handleUpload = () => {
-    console.log("handleUpload");
+    logger.info("handleUpload");
 
     this.#progress?.classList.remove("opacity-0");
   };
