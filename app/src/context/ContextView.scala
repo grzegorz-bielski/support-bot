@@ -12,6 +12,9 @@ import context.chat.*
 import supportbot.rag.*
 
 object ContextView extends HtmxView:
+  private val uploadedFilesListId = "uploaded-files-list"
+  private val uploadModalId       = "uploadModal"
+
   def view(
     context: ContextInfo,
     chatPostUrl: String,
@@ -27,12 +30,10 @@ object ContextView extends HtmxView:
     ),
   )
 
-  def uploadedDocuments(docs: Vector[DocumentName]) = 
+  def uploadedDocuments(docs: Vector[Document.Ingested]) =
     ul(
-      docs.map: doc =>
-        li(
-          doc,
-        ),
+      `hx-swap-oob` := s"beforeend:#$uploadedFilesListId",
+      docs.map(ingested => documentItem(ingested.info)),
     )
 
   def contextsOverview(contexts: Vector[ContextInfo])(using AppConfig) =
@@ -154,6 +155,14 @@ object ContextView extends HtmxView:
       ),
     )
 
+  private def documentItem(document: Document.Info) =
+    li(
+      a(
+        documentIcon(),
+        s"${document.name} - v${document.version}",
+      ),
+    )
+
   private def knowledgeBase(
     uploadUrl: String,
     fileFieldName: String,
@@ -165,17 +174,12 @@ object ContextView extends HtmxView:
       collapseContent = div(
         h3("Files"),
         ul(
+          id  := uploadedFilesListId,
           cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s",
-          documents.map: document =>
-            li(
-              a(
-                documentIcon(),
-                s"${document.name} - v${document.version}",
-              ),
-            ),
+          documents.map(documentItem),
         ),
         modal(
-          modalId = "uploadModal",
+          modalId = uploadModalId,
           buttonTitle = "Upload more",
           modalTitle = "Upload your files",
           modalContent = uploadForm(
@@ -225,43 +229,21 @@ object ContextView extends HtmxView:
   private def uploadForm(
     uploadUrl: String,
     fileFieldName: String,
-  )            =
-    form(
-      id            := "upload-form",
-      cls           := "w-full",
-      `hx-post`     := uploadUrl,
-      `hx-encoding` := "multipart/form-data",
-      div(
-        cls := "my-10",
-        label(
-          `for` := "dropzone-file",
-          cls   := "form-control flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-base-100 transition-colors hover:border-gray-400",
-          span(
-            cls          := "flex flex-col items-center justify-center pt-5 pb-6",
-            span(uploadIcon()),
-            p(
-              cls := "mb-2 text-sm text-gray-500 dark:text-gray-400",
-              span(
-                cls    := "font-semibold",
-                "Click to upload",
-              ),
-              span(cls := "ml-1", "or drag and drop"),
-            ),
-            p(cls := "text-xs text-gray-500 dark:text-gray-400", "PDF, TXT, HTML, Word, EPUB and more"),
-          ),
-          input(
-            id           := "dropzone-file",
-            `type`       := "file",
-            attr("name") := fileFieldName,
-            cls          := "hidden",
-            multiple     := "true",
-          ),
-        ),
-      ),
-      button(
-        cls := "btn btn-primary block ml-auto",
-        "Upload",
-      ),
+  )   =
+    fileUploader(
+      attr("allowed-types")   :=
+        Vector(
+          "application/pdf",
+          "text/plain",
+          "text/html",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "application/epub+zip",
+        ).mkString(","),
+      attr("max-size")        := "1073741824", // 1GiB
+      attr("upload-url")      := uploadUrl,
+      attr("file-field-name") := fileFieldName,
+      attr("modal-id")        := uploadModalId,
     )
 
   private def collapse(
@@ -285,25 +267,6 @@ object ContextView extends HtmxView:
       div(
         cls    := "collapse-content",
         collapseContent,
-      ),
-    )
-
-  private def uploadIcon() =
-    import scalatags.Text.svgTags.{attr as _, *}
-    import scalatags.Text.svgAttrs.*
-
-    svg(
-      cls         := "w-8 h-8 mb-4 text-gray-500 dark:text-gray-400",
-      aria.hidden := true,
-      xmlns       := "http://www.w3.org/2000/svg",
-      fill        := "none",
-      viewBox     := "0 0 20 16",
-      path(
-        stroke                  := "currentColor",
-        attr("stroke-linecap")  := "round",
-        attr("stroke-linejoin") := "round",
-        attr("stroke-width")    := "2",
-        d                       := "M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2",
       ),
     )
 

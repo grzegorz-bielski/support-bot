@@ -1,0 +1,11 @@
+{
+    "name": "elements",
+    "version": "1.0.0",
+    "scripts": {
+      "build:watch": "esbuild ./index.ts --bundle --sourcemap --watch --outfile=../app/resources/static/elements.js",
+      "build:prod": "esbuild ./index.ts --bundle --minify --outfile=../app/resources/static/elements.js"
+    },
+    "devDependencies": {
+        "esbuild": "^0.24.0"
+    }
+}

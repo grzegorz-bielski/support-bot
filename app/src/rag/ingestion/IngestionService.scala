@@ -11,7 +11,7 @@ import org.typelevel.log4cats.*
 import supportbot.rag.vectorstore.*
 
 trait IngestionService[F[_]]:
-  def ingest(input: IngestionService.Input): F[Unit]
+  def ingest(input: IngestionService.Input): F[Document.Ingested]
 object IngestionService:
   final case class Input(
     contextId: ContextId,
@@ -26,8 +26,10 @@ final class ClickHouseIngestionService(using
   vectorStoreRepository: VectorStoreRepository[IO],
   logger: Logger[IO],
 ) extends IngestionService[IO]:
-  def ingest(input: IngestionService.Input): IO[Unit] =
+  def ingest(input: IngestionService.Input): IO[Document.Ingested] =
     import input.*
+
+    // TODO: this has a lot of moving pieces, maybe it can be done in more atomic way?
 
     for
       documentId <- DocumentId.of
@@ -59,7 +61,7 @@ final class ClickHouseIngestionService(using
 
       _ <- vectorStoreRepository.store(indexEmbeddings)
       _ <- info"Document $documentId: embeddings persisted."
-    yield ()
+    yield document
 
   private def getDocumentVersion(
     documentId: DocumentId,

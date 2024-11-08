@@ -16,15 +16,11 @@ object RootLayoutView extends HtmxView:
         // tailwind-generated styles
         link(
           rel         := "stylesheet",
-          href        := s"/static/generated.css",
+          href        := "/static/generated.css",
         ),
         script(
-          src         := "https://unpkg.com/htmx.org@2.0.3",
-          integrity   := "sha384-0895/pl2MU10Hqc6jd4RvrthNlDiE9U1tWmX7WRESftEDRosgxNsQG/Ze9YMRzHq",
-          crossorigin := "anonymous",
-        ),
-        script(
-          src         := "https://unpkg.com/htmx-ext-sse@2.2.2/sse.js",
+          src := "/static/bundle.js",
+          defer
         ),
       ) ++ devSetup
 

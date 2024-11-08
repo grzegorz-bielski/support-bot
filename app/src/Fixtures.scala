@@ -1,3 +1,4 @@
+
 package supportbot
 
 import cats.syntax.all.*
@@ -23,7 +24,7 @@ object Fixtures:
   ) =
     IO.whenA(AppConfig.get.loadFixtures):
       Files[IO]
-        .list(Path("./content"))
+        .list(Path("./app/content"))
         .take(1) // only first file, so it's faster
         .evalMap: path =>
           IO.println(s"Processing file: $path") *> createLocalPdfEmbeddings(path)

@@ -126,23 +126,19 @@ final class ContextController(using
             .mixedMultipartResource[IO]()
             .use: decoder =>
               req.decodeWith(decoder, strict = true): multipart =>
-                val uploadedDocuments = multipart.parts
+                val ingestedDocuments = multipart.parts
                   .filter(_.name.contains(fileFieldName))
                   .parTraverse: part =>
-                    val documentName = DocumentName(part.filename.getOrElse("unknown"))
+                    ingestionService.ingest(
+                      IngestionService.Input(
+                        contextId = context.id,
+                        documentName = DocumentName(part.filename.getOrElse("unknown")),
+                        embeddingsModel = context.embeddingsModel,
+                        content = part.body,
+                      ),
+                    )
 
-                    ingestionService
-                      .ingest(
-                        IngestionService.Input(
-                          contextId = context.id,
-                          documentName = documentName,
-                          embeddingsModel = context.embeddingsModel,
-                          content = part.body,
-                        ),
-                      )
-                      .as(documentName)
-
-                uploadedDocuments.flatMap: docs =>
+                ingestedDocuments.flatMap: docs =>
                   Ok(
                     ContextView.uploadedDocuments(docs),
                   )
