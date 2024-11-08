@@ -15,10 +15,11 @@ trait HtmxView:
   lazy val `hx-boost`: HtmxAttr    = attr("hx-boost")
   lazy val `hx-ext`: HtmxAttr      = attr("hx-ext")
   lazy val `hx-encoding`: HtmxAttr = attr("hx-encoding")
+  lazy val `hx-swap-oob`: HtmxAttr = attr("hx-swap-oob")
   lazy val `sse-connect`: HtmxAttr = attr("sse-connect")
   lazy val `sse-swap`: HtmxAttr    = attr("sse-swap")
   lazy val `sse-close`: HtmxAttr   = attr("sse-close")
-
+  
   lazy val dialog = tag("dialog")
 
   lazy val fileUploader = tag("file-uploader")

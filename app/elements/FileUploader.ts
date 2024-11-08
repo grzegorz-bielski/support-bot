@@ -3,6 +3,7 @@ import { logger } from "./logger";
 type HTMXProgressEvent = Event & {
   detail: { loaded: number; total: number; lengthComputable: number };
 };
+type HTMXCompleteEvent = Event & { detail: { successful: boolean } };
 type ValidationResult = { valid: boolean; error?: string };
 
 class FileUploader extends HTMLElement {
@@ -11,9 +12,16 @@ class FileUploader extends HTMLElement {
   readonly #uploadUrl: string;
   readonly #fileFieldName: string;
   readonly #root: HTMLElement;
+  readonly #modalId?: string;
 
   static get observedAttributes(): string[] {
-    return ["allowed-types", "max-file-size", "upload-url", "file-field-name"];
+    return [
+      "allowed-types",
+      "max-file-size",
+      "upload-url",
+      "file-field-name",
+      "modal-id",
+    ];
   }
 
   get #uploadForm() {
@@ -48,11 +56,11 @@ class FileUploader extends HTMLElement {
     super();
 
     this.#root = this;
-
     this.#allowedFileTypes = this.getAttribute("allowed-types")?.split(",");
-    this.#maxFileSize = Number(this.getAttribute("max-file-size")) || undefined;
-    this.#uploadUrl = this.getAttribute("upload-url") || "";
-    this.#fileFieldName = this.getAttribute("file-field-name") || "files";
+    this.#maxFileSize = Number(this.getAttribute("max-file-size")) ?? undefined;
+    this.#uploadUrl = this.getAttribute("upload-url") ?? "";
+    this.#fileFieldName = this.getAttribute("file-field-name") ?? "files";
+    this.#modalId = this.getAttribute("modal-id") ?? "";
 
     const uploadIcon = `
       <svg
@@ -78,6 +86,7 @@ class FileUploader extends HTMLElement {
           class="w-full" 
           hx-post="${this.#uploadUrl}" 
           hx-encoding="multipart/form-data"
+          hx-swap="none"
         >
           <div class="mt-10">
             <label 
@@ -126,33 +135,54 @@ class FileUploader extends HTMLElement {
       fileInput.addEventListener("change", this.#handleFileSelect);
       uploadForm.addEventListener("submit", this.#handleUpload);
       uploadForm.addEventListener("htmx:xhr:progress", this.#handleProgress);
+      uploadForm.addEventListener("htmx:afterRequest", this.#handleComplete);
       fileList.addEventListener("click", this.#handleFileRemove);
     }
   }
 
+  #handleComplete = (e: Event) => {
+    const event = e as HTMXCompleteEvent;
+    logger.info("handleComplete", event);
+    
+    if (event.detail.successful) {
+      this.#progress?.classList.add("opacity-0");
+
+      this.#uploadForm?.reset();
+      this.#updateFileList();
+      if (this.#modalId) {
+        setTimeout(() => {
+          logger.info("closing modal");
+          document.querySelector<HTMLDialogElement>(`#${this.#modalId}`)?.close();
+        }, 300)
+      }
+    }
+
+    // TODO: somehow handle the error case
+  };
+
   #handleDragOver = (e: DragEvent): void => {
     e.preventDefault();
     e.stopPropagation();
-    logger.info("handleDragOver")
+    logger.info("handleDragOver");
     this.#dropZone?.classList.add("bg-base-200");
   };
 
   #handleDragLeave = (e: DragEvent): void => {
     e.preventDefault();
     e.stopPropagation();
-    logger.info("handleDragLeave")
+    logger.info("handleDragLeave");
     this.#dropZone?.classList.remove("bg-base-200");
   };
 
   #handleDrop = (e: DragEvent): void => {
     e.preventDefault();
     e.stopPropagation();
-    logger.info("handleDrop")
+    logger.info("handleDrop");
     this.#dropZone?.classList.remove("bg-base-200");
 
     // add DnD files to input
-    const [fileInput, files] = [this.#fileInput, e.dataTransfer?.files]
-    if (!fileInput || !files) return 
+    const [fileInput, files] = [this.#fileInput, e.dataTransfer?.files];
+    if (!fileInput || !files) return;
     fileInput.files = files;
 
     this.#updateFileList();

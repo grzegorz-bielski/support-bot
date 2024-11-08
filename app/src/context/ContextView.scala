@@ -12,6 +12,9 @@ import context.chat.*
 import supportbot.rag.*
 
 object ContextView extends HtmxView:
+  private val uploadedFilesListId = "uploaded-files-list"
+  private val uploadModalId       = "uploadModal"
+
   def view(
     context: ContextInfo,
     chatPostUrl: String,
@@ -27,12 +30,10 @@ object ContextView extends HtmxView:
     ),
   )
 
-  def uploadedDocuments(docs: Vector[DocumentName]) =
+  def uploadedDocuments(docs: Vector[Document.Ingested]) =
     ul(
-      docs.map: doc =>
-        li(
-          doc,
-        ),
+      `hx-swap-oob` := s"beforeend:#$uploadedFilesListId",
+      docs.map(ingested => documentItem(ingested.info)),
     )
 
   def contextsOverview(contexts: Vector[ContextInfo])(using AppConfig) =
@@ -154,6 +155,14 @@ object ContextView extends HtmxView:
       ),
     )
 
+  private def documentItem(document: Document.Info) =
+    li(
+      a(
+        documentIcon(),
+        s"${document.name} - v${document.version}",
+      ),
+    )
+
   private def knowledgeBase(
     uploadUrl: String,
     fileFieldName: String,
@@ -165,17 +174,12 @@ object ContextView extends HtmxView:
       collapseContent = div(
         h3("Files"),
         ul(
+          id  := uploadedFilesListId,
           cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s",
-          documents.map: document =>
-            li(
-              a(
-                documentIcon(),
-                s"${document.name} - v${document.version}",
-              ),
-            ),
+          documents.map(documentItem),
         ),
         modal(
-          modalId = "uploadModal",
+          modalId = uploadModalId,
           buttonTitle = "Upload more",
           modalTitle = "Upload your files",
           modalContent = uploadForm(
@@ -239,6 +243,7 @@ object ContextView extends HtmxView:
       attr("max-size")        := "1073741824", // 1GiB
       attr("upload-url")      := uploadUrl,
       attr("file-field-name") := fileFieldName,
+      attr("modal-id")        := uploadModalId,
     )
 
   private def collapse(

@@ -17,6 +17,3 @@ test:
     echo "Running tests"
     export ENV=Test
     scala-cli test .
-
-# elements-dev:
-#     npm run build:watch --workspace elements
