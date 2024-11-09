@@ -58,14 +58,14 @@ final class ContextController(using
         yield response
 
       case GET -> Root / ContextIdVar(contextId) =>
-        getContextOrNotFound(contextId): context =>
+        getContextOrNotFound(contextId): contextInfo =>
           for
-            documents <- documentRepository.getAll(context.id)
+            documents <- documentRepository.getAll(contextInfo.id)
             response  <- Ok(
                            ContextView.view(
-                             context = context,
-                             uploadUrl = s"/$prefix/${context.id}/documents/upload",
-                             chatPostUrl = s"/$prefix/${context.id}/chat/query",
+                             contextInfo = contextInfo,
+                             uploadUrl = s"/$prefix/${contextInfo.id}/documents/upload",
+                             chatPostUrl = s"/$prefix/${contextInfo.id}/chat/query",
                              documents = documents,
                              fileFieldName = fileFieldName,
                            ),

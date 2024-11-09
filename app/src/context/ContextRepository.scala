@@ -19,6 +19,7 @@ final case class ContextInfo(
     chatModel: Model,
     embeddingsModel: Model,
 )
+
 object ContextInfo:
     def default: IO[ContextInfo] = 
         ContextId.of.map(default)

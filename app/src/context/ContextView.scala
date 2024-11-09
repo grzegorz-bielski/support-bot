@@ -5,7 +5,7 @@ import cats.effect.*
 import cats.syntax.all.*
 import org.http4s.{scalatags as _, h2 as _, *}
 import scalatags.Text.all.*
-import scalatags.Text.tags2.{progress}
+import scalatags.Text.tags2.{progress, details, summary}
 
 import context.chat.*
 
@@ -16,15 +16,20 @@ object ContextView extends HtmxView:
   private val uploadModalId       = "uploadModal"
 
   def view(
-    context: ContextInfo,
+    contextInfo: ContextInfo,
     chatPostUrl: String,
     uploadUrl: String,
     documents: Vector[Document.Info],
     fileFieldName: String,
   )(using AppConfig) = RootLayoutView.view(
     div(
-      configMenu(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName),
-      div(cls := "divider", aria.hidden := true, "workbench"),
+      configMenu(
+        uploadUrl = uploadUrl,
+        documents = documents,
+        fileFieldName = fileFieldName,
+        contextInfo = contextInfo,
+      ),
+      // div(cls := "divider", aria.hidden := true, "workbench"),
       ChatView.messages(),
       ChatView.chatForm(postUrl = chatPostUrl),
     ),
@@ -75,84 +80,154 @@ object ContextView extends HtmxView:
       ),
     )
 
-  private def configMenu(uploadUrl: String, documents: Vector[Document.Info], fileFieldName: String) =
+  private def configMenu(
+    uploadUrl: String,
+    documents: Vector[Document.Info],
+    fileFieldName: String,
+    contextInfo: ContextInfo,
+  ) =
     div(
-      cls := "grid grid-cols-1 md:grid-cols-2 gap-4 py-4",
-      div(knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName)),
-      div(promptSettings()),
-      div(retrievalSettings()),
+      role := "tablist",
+      cls  := "tabs tabs-lifted",
+      tab(
+        "Knowledge Base",
+        knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName),
+        checked = true,
+      ),
+      tab("Context Settings", contextSettings(contextInfo = contextInfo)),
     )
 
-  private def retrievalSettings() =
-    collapse(
-      opened = false,
-      collapseTitle = "Retrieval Settings",
-      collapseContent = div(
-        form(
-          cls := "form-control",
-          label(
-            cls         := "label",
-            "Top K",
-          ),
-          input(
-            cls         := "input",
-            `type`      := "number",
-            placeholder := "Type the number of top K",
-          ),
-          label(
-            cls         := "label",
-            "Fragment Lookup Range",
-          ),
-          input(
-            cls         := "input",
-            `type`      := "number",
-            placeholder := "Type the number of fragment lookup range",
-          ),
-          button(
-            cls         := "btn btn-primary",
-            "Save",
-          ),
+  private def tab(name: String, content: Modifier, checked: Boolean = false) =
+    Seq(
+      input(
+        `type`             := "radio",
+        attr("name")       := "my_tabs_2",
+        role               := "tab",
+        cls                := "tab bg-inherit min-w-36 focus:[box-shadow:none]",
+        attr("aria-label") := name,
+        Option.when(checked)(attr("checked") := "checked"),
+      ),
+      div(role             := "tabpanel", cls := "tab-content bg-base-100 border-base-300 rounded-box p-2 md:p-6", content),
+    )
+
+  // private def retrievalSettings() =
+  //   collapse(
+  //     opened = false,
+  //     collapseTitle = "Retrieval Settings",
+  //     collapseContent = div(
+  //       form(
+  //         cls := "form-control",
+  //         label(
+  //           cls         := "label",
+  //           "Top K",
+  //         ),
+  //         input(
+  //           cls         := "input",
+  //           `type`      := "number",
+  //           placeholder := "Type the number of top K",
+  //         ),
+  //         label(
+  //           cls         := "label",
+  //           "Fragment Lookup Range",
+  //         ),
+  //         input(
+  //           cls         := "input",
+  //           `type`      := "number",
+  //           placeholder := "Type the number of fragment lookup range",
+  //         ),
+  //         button(
+  //           cls         := "btn btn-primary",
+  //           "Save",
+  //         ),
+  //       ),
+  //     ),
+  //   )
+
+  private def contextSettings(contextInfo: ContextInfo) =
+    val promptTemplateJson =
+      contextInfo.promptTemplate.asJson(indentStep = 2).combineAll
+
+    div(
+      form(
+        // formInput(
+        //   labelValue = "Name",
+        //   placeholderValue = contextInfo.name,
+        // ),
+        // formInput(
+        //   labelValue = "Description",
+        //   placeholderValue = contextInfo.description,
+        // ),
+        formTextarea(
+          labelValue = "Prompt Template",
+          value = promptTemplateJson,
+        ),
+        formSelect(
+          labelValue = "Chat Model",
+          options = modelOptions(contextInfo.chatModel),
+        ),
+        formSelect(
+          labelValue = "Embeddings Model",
+          options = modelOptions(contextInfo.embeddingsModel),
+        ),
+        button(
+          cls := "btn btn-secondary block ml-auto mt-2",
+          "Save",
         ),
       ),
     )
 
-  private def promptSettings() =
-    collapse(
-      opened = false,
-      collapseTitle = "Prompt Settings",
-      collapseContent = div(
-        form(
-          cls := "form-control",
-          label(
-            cls         := "label",
-            "Prompt Template",
+  private def formTextarea(labelValue: String, value: String) =
+    formControl(
+      labelValue,
+      textarea(
+        cls := "textarea textarea-bordered w-full h-64 bg-base-200",
+        value,
+      ),
+    )
+
+  private def formInput(labelValue: String, placeholderValue: String) =
+    formControl(
+      labelValue,
+      input(
+        cls         := "input input-bordered w-full bg-base-200",
+        placeholder := placeholderValue,
+      ),
+    )
+
+  final case class SelectOption(label: String, value: String, selected: Boolean = false)
+
+  private def formSelect(labelValue: String, options: Vector[SelectOption]) =
+    formControl(
+      labelValue,
+      select(
+        cls := "select select-bordered w-full bg-base-200",
+        options.map: op =>
+          option(
+            value    := op.value,
+            selected := op.selected,
+            op.label,
           ),
-          textarea(
-            cls         := "textarea h-24",
-            placeholder := "Type your prompt template here",
-          ),
-          label(
-            cls         := "label",
-            "Prompt Options",
-          ),
-          textarea(
-            cls         := "textarea h-24",
-            placeholder := "Type your prompt options here",
-          ),
-          label(
-            cls         := "label",
-            "Prompt Options",
-          ),
-          textarea(
-            cls         := "textarea h-24",
-            placeholder := "Type your prompt options here",
-          ),
-          button(
-            cls         := "btn btn-primary",
-            "Save",
-          ),
+      ),
+    )
+
+  private def modelOptions(current: Model) = Model.values.toVector.map: model =>
+    SelectOption(
+      label = model.name,
+      value = model.name,
+      selected = model == current,
+    )
+
+  private def formControl(labelValue: String, input: Modifier) =
+    label(
+      cls := "form-control w-full",
+      div(
+        cls := "label",
+        span(
+          cls := "label-text",
+          labelValue,
         ),
       ),
+      input,
     )
 
   private def documentItem(document: Document.Info) =
@@ -168,27 +243,43 @@ object ContextView extends HtmxView:
     fileFieldName: String,
     documents: Vector[Document.Info],
   ) =
-    collapse(
-      opened = true,
-      collapseTitle = "Knowledge Base",
-      collapseContent = div(
-        h3("Files"),
-        ul(
-          id  := uploadedFilesListId,
-          cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s",
-          documents.map(documentItem),
-        ),
-        modal(
-          modalId = uploadModalId,
-          buttonTitle = "Upload more",
-          modalTitle = "Upload your files",
-          modalContent = uploadForm(
-            uploadUrl = uploadUrl,
-            fileFieldName = fileFieldName,
+
+    val files = div(
+      ul(
+        cls := "max-h-60 overflow-y-scroll",
+        id  := uploadedFilesListId,
+        // cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s",
+        documents.map(documentItem),
+      ),
+    )
+
+    val uploadFilesButton = modal(
+      modalId = uploadModalId,
+      buttonTitle = "Upload files",
+      modalTitle = "Upload your files",
+      modalContent = uploadForm(
+        uploadUrl = uploadUrl,
+        fileFieldName = fileFieldName,
+      ),
+      buttonExtraClasses = Vector("btn-secondary block ml-auto"),
+    )
+
+    div(
+      ul(
+        cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s mb-4",
+        li(
+          details(
+            // Option.when(documents.length < 30)(attr("open") := true),
+            attr("open") := true,
+            summary(
+              folderIcon(),
+              "Files",
+            ),
+            files,
           ),
-          buttonExtraClasses = Vector("btn-secondary block ml-auto"),
         ),
       ),
+      uploadFilesButton,
     )
 
   private def modal(
@@ -267,6 +358,24 @@ object ContextView extends HtmxView:
       div(
         cls    := "collapse-content",
         collapseContent,
+      ),
+    )
+
+  private def folderIcon() =
+    import scalatags.Text.svgTags.{attr as _, *}
+    import scalatags.Text.svgAttrs.*
+
+    svg(
+      xmlns                := "http://www.w3.org/2000/svg",
+      fill                 := "none",
+      viewBox              := "0 0 24 24",
+      attr("stroke-width") := "1.5",
+      stroke               := "currentColor",
+      cls                  := "h-4 w-4",
+      path(
+        attr("stroke-linecap")  := "round",
+        attr("stroke-linejoin") := "round",
+        d                       := "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z",
       ),
     )
 
