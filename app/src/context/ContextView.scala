@@ -23,15 +23,20 @@ object ContextView extends HtmxView:
     fileFieldName: String,
   )(using AppConfig) = RootLayoutView.view(
     div(
-      configMenu(
-        uploadUrl = uploadUrl,
-        documents = documents,
-        fileFieldName = fileFieldName,
-        contextInfo = contextInfo,
+      cls := "grid grid-cols-1 md:grid-cols-2 gap-6",
+      div(
+        configMenu(
+          uploadUrl = uploadUrl,
+          documents = documents,
+          fileFieldName = fileFieldName,
+          contextInfo = contextInfo,
+        ),
       ),
-      // div(cls := "divider", aria.hidden := true, "workbench"),
-      ChatView.messages(),
-      ChatView.chatForm(postUrl = chatPostUrl),
+      div(
+        div(cls := "divider", aria.hidden := true, "workbench"),
+        ChatView.messages(),
+        ChatView.chatForm(postUrl = chatPostUrl),
+      ),
     ),
   )
 
@@ -149,14 +154,17 @@ object ContextView extends HtmxView:
 
     div(
       form(
-        // formInput(
-        //   labelValue = "Name",
-        //   placeholderValue = contextInfo.name,
-        // ),
-        // formInput(
-        //   labelValue = "Description",
-        //   placeholderValue = contextInfo.description,
-        // ),
+        div(
+          cls := "grid grid-cols-1 md:grid-cols-2 gap-2",
+          formInput(
+          labelValue = "Name",
+            placeholderValue = contextInfo.name,
+          ),
+          formInput(
+            labelValue = "Description",
+            placeholderValue = contextInfo.description,
+          ),
+        ),
         formTextarea(
           labelValue = "Prompt Template",
           value = promptTemplateJson,
@@ -232,9 +240,9 @@ object ContextView extends HtmxView:
 
   private def documentItem(document: Document.Info) =
     li(
-      a(
-        documentIcon(),
-        s"${document.name} - v${document.version}",
+      div(
+        span(documentIcon()),
+        span(cls := "text-wrap break-all", s"${document.name} - v${document.version}"),
       ),
     )
 

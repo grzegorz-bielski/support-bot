@@ -89,6 +89,7 @@ final class ContextController(using
 
       case req @ POST -> Root / ContextIdVar(contextId) / "chat" / "query" =>
         getContextOrNotFound(contextId): context =>
+          println("contextId: " -> contextId)
           for
             query   <- req.as[ChatQuery]
             queryId <- QueryId.of
