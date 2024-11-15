@@ -26,7 +26,7 @@ object RootLayoutView extends HtmxView:
 
     doctype("html")(
       html(
-        data("theme") := "cupcake",
+        data("theme") := "cmyk",
         lang          := "en",
         head(headContent*),
         body(
@@ -56,6 +56,9 @@ object RootLayoutView extends HtmxView:
     div(
       cls := "navbar bg-base-100",
       div(cls := "flex-1", appLink("/", "SupportBot 🤖", cls := "btn btn-ghost text-xl")),
+      // div(
+      //   themeController(),
+      // )
       // div(
       //   cls   := "flex-none",
       //   ul(

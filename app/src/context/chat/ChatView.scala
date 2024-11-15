@@ -18,7 +18,7 @@ object ChatView extends HtmxView:
     )(
       div(
         input(
-          cls         := "w-full p-2 rounded-lg",
+          cls         := "input input-bordered w-full p-2",
           `type`      := "text",
           name        := "content",
           placeholder := "Type a query to the chatbot",

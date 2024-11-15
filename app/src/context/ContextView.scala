@@ -18,6 +18,7 @@ object ContextView extends HtmxView:
   def view(
     contextInfo: ContextInfo,
     chatPostUrl: String,
+    contextUpdateUrl: String,
     uploadUrl: String,
     documents: Vector[Document.Info],
     fileFieldName: String,
@@ -27,6 +28,7 @@ object ContextView extends HtmxView:
       div(
         configMenu(
           uploadUrl = uploadUrl,
+          contextUpdateUrl = contextUpdateUrl,
           documents = documents,
           fileFieldName = fileFieldName,
           contextInfo = contextInfo,
@@ -87,6 +89,7 @@ object ContextView extends HtmxView:
 
   private def configMenu(
     uploadUrl: String,
+    contextUpdateUrl: String,
     documents: Vector[Document.Info],
     fileFieldName: String,
     contextInfo: ContextInfo,
@@ -99,7 +102,7 @@ object ContextView extends HtmxView:
         knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName),
         checked = true,
       ),
-      tab("Context Settings", contextSettings(contextInfo = contextInfo)),
+      tab("Context Settings", contextSettings(contextInfo = contextInfo, contextUpdateUrl = contextUpdateUrl)),
     )
 
   private def tab(name: String, content: Modifier, checked: Boolean = false) =
@@ -108,7 +111,7 @@ object ContextView extends HtmxView:
         `type`             := "radio",
         attr("name")       := "my_tabs_2",
         role               := "tab",
-        cls                := "tab bg-inherit min-w-36 focus:[box-shadow:none]",
+        cls                := "tab bg-inherit min-w-36 focus:[box-shadow:none] checked:[background-image:none]",
         attr("aria-label") := name,
         Option.when(checked)(attr("checked") := "checked"),
       ),
@@ -148,33 +151,47 @@ object ContextView extends HtmxView:
   //     ),
   //   )
 
-  private def contextSettings(contextInfo: ContextInfo) =
+  private def contextSettings(
+    contextInfo: ContextInfo,
+    contextUpdateUrl: String,
+  ) =
     val promptTemplateJson =
       contextInfo.promptTemplate.asJson(indentStep = 2).combineAll
 
+    // println(
+    //   "contextInfo" -> contextInfo,
+    // )
+
     div(
       form(
+        `hx-post` := contextUpdateUrl,
+        `hx-swap` := "none",
         div(
           cls := "grid grid-cols-1 md:grid-cols-2 gap-2",
           formInput(
-          labelValue = "Name",
-            placeholderValue = contextInfo.name,
+            labelValue = "Name",
+            fieldName = "name",
+            value = contextInfo.name,
           ),
           formInput(
             labelValue = "Description",
-            placeholderValue = contextInfo.description,
+            fieldName = "description",
+            value = contextInfo.description,
           ),
         ),
         formTextarea(
           labelValue = "Prompt Template",
+          fieldName = "promptTemplate",
           value = promptTemplateJson,
         ),
         formSelect(
           labelValue = "Chat Model",
+          fieldName = "chatModel",
           options = modelOptions(contextInfo.chatModel),
         ),
         formSelect(
           labelValue = "Embeddings Model",
+          fieldName = "embeddingsModel",
           options = modelOptions(contextInfo.embeddingsModel),
         ),
         button(
@@ -184,35 +201,39 @@ object ContextView extends HtmxView:
       ),
     )
 
-  private def formTextarea(labelValue: String, value: String) =
+  private def formTextarea(labelValue: String, fieldName: String, value: String) =
     formControl(
       labelValue,
       textarea(
-        cls := "textarea textarea-bordered w-full h-64 bg-base-200",
+        cls  := "textarea textarea-bordered w-full h-64 bg-base-200",
+        name := fieldName,
         value,
       ),
     )
 
-  private def formInput(labelValue: String, placeholderValue: String) =
+  private def formInput(labelValue: String, fieldName: String, value: String) =
     formControl(
       labelValue,
       input(
-        cls         := "input input-bordered w-full bg-base-200",
-        placeholder := placeholderValue,
+        cls           := "input input-bordered w-full bg-base-200",
+        name          := fieldName,
+        attr("value") := value,
       ),
     )
 
   final case class SelectOption(label: String, value: String, selected: Boolean = false)
 
-  private def formSelect(labelValue: String, options: Vector[SelectOption]) =
+  private def formSelect(labelValue: String, fieldName: String, options: Vector[SelectOption]) =
     formControl(
       labelValue,
       select(
-        cls := "select select-bordered w-full bg-base-200",
+        cls  := "select select-bordered w-full bg-base-200",
+        name := fieldName,
         options.map: op =>
           option(
             value    := op.value,
-            selected := op.selected,
+            Option.when(op.selected)(selected := true),
+            // selected := op.selected,
             op.label,
           ),
       ),
@@ -325,24 +346,42 @@ object ContextView extends HtmxView:
 
   // https://uploadcare.com/blog/how-to-make-a-drag-and-drop-file-uploader/
   // https://http4s.org/v1/docs/multipart.html
-  private def uploadForm(
-    uploadUrl: String,
-    fileFieldName: String,
-  )   =
+  private def uploadForm(uploadUrl: String, fileFieldName: String) =
     fileUploader(
-      attr("allowed-types")   :=
-        Vector(
-          "application/pdf",
-          "text/plain",
-          "text/html",
-          "application/msword",
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          "application/epub+zip",
-        ).mkString(","),
-      attr("max-size")        := "1073741824", // 1GiB
       attr("upload-url")      := uploadUrl,
       attr("file-field-name") := fileFieldName,
       attr("modal-id")        := uploadModalId,
+      attr("max-size")        := "1073741824", // 1GiB
+      attr("allowed-types")   :=
+        Vector(
+          // General
+          "application/pdf",
+          "text/plain",
+          "text/html",
+          "text/csv",
+          "text/xml",
+          "application/rtf",
+          "application/json",
+          "application/xml",
+          "application/xhtml+xml",
+          // MS
+          "application/vnd.ms-excel",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          // OpenOffice
+          "application/vnd.ms-powerpoint",
+          "application/x-vnd.oasis.opendocument.spreadsheet",
+          "application/vnd.oasis.opendocument.spreadsheet",
+          "application/vnd.oasis.opendocument.presentation",
+          "application/vnd.oasis.opendocument.text",
+          // Other
+          "application/x-abiword",
+          // Ebooks
+          "application/epub+zip",
+          "application/x-mobipocket-ebook",
+        ).mkString(","),
     )
 
   private def collapse(

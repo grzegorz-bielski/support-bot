@@ -30,9 +30,12 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
           description, 
           prompt_template, 
           chat_model, 
-          embeddings_model
+          embeddings_model,
+          updated_at
         FROM contexts 
         WHERE id = toUUID('$id')
+        ORDER BY updated_at DESC
+        LIMIT 1
         FORMAT JSONEachRow
         """
       .evalMap: row => 
@@ -50,8 +53,11 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
           description, 
           prompt_template, 
           chat_model, 
-          embeddings_model
-        FROM contexts 
+          embeddings_model,
+          updated_at
+        FROM contexts
+        ORDER BY toUInt128(id), updated_at DESC
+        LIMIT 1 BY id
         FORMAT JSONEachRow
         """
       .evalMap: row => 
@@ -86,25 +92,6 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
   override def delete(id: ContextId): IO[Unit] =
     client.executeQuery:
       i"""DELETE FROM contexts WHERE id = toUUID('$id')"""
-
-  // private def contextExists(id: ContextId): IO[Boolean] =
-  //   client
-  //     .streamQueryTextLines:
-  //       i"""
-  //       SELECT
-  //        EXISTS(
-  //         SELECT id 
-  //         FROM contexts 
-  //         WHERE id = toUUID('$id')
-  //         LIMIT 1
-  //        )
-  //       """
-  //     .compile
-  //     .string
-  //     .map(_.trim.toInt)
-  //     .map(_ == 1)
-  //     .flatMap: value =>
-  //       info"Context $id exists: $value".as(value)
 
 object ClickHouseContextRepository:
   def of(using client: ClickHouseClient[IO]): IO[ClickHouseContextRepository] =

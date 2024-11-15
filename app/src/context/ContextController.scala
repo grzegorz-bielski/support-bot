@@ -66,6 +66,7 @@ final class ContextController(using
                              contextInfo = contextInfo,
                              uploadUrl = s"/$prefix/${contextInfo.id}/documents/upload",
                              chatPostUrl = s"/$prefix/${contextInfo.id}/chat/query",
+                             contextUpdateUrl = s"/$prefix/${contextInfo.id}/update",
                              documents = documents,
                              fileFieldName = fileFieldName,
                            ),
@@ -120,6 +121,17 @@ final class ContextController(using
                 ),
               )
           yield res
+
+      case req @ POST -> Root / ContextIdVar(contextId) / "update" =>
+        getContextOrNotFound(contextId): context =>
+          for
+            contextInfo <- req.as[ContextInfoFormDto].map(_.asContextInfo(context.id))
+            _           <- info"Updating context: $contextInfo"
+            response    <- contextInfo.fold(
+                             BadRequest(_),
+                             contextRepository.createOrUpdate(_) *> Ok(),
+                           )
+          yield response
 
       case req @ POST -> Root / ContextIdVar(contextId) / "documents" / "upload" =>
         getContextOrNotFound(contextId): context =>

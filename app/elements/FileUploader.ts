@@ -7,7 +7,7 @@ type HTMXCompleteEvent = Event & { detail: { successful: boolean } };
 type ValidationResult = { valid: boolean; error?: string };
 
 class FileUploader extends HTMLElement {
-  readonly #allowedFileTypes?: string[];
+  readonly #allowedFileTypes?: string;
   readonly #maxFileSize?: number;
   readonly #uploadUrl: string;
   readonly #fileFieldName: string;
@@ -56,7 +56,7 @@ class FileUploader extends HTMLElement {
     super();
 
     this.#root = this;
-    this.#allowedFileTypes = this.getAttribute("allowed-types")?.split(",");
+    this.#allowedFileTypes = this.getAttribute("allowed-types") ?? undefined;
     this.#maxFileSize = Number(this.getAttribute("max-file-size")) ?? undefined;
     this.#uploadUrl = this.getAttribute("upload-url") ?? "";
     this.#fileFieldName = this.getAttribute("file-field-name") ?? "files";
@@ -106,9 +106,10 @@ class FileUploader extends HTMLElement {
               </span>
               <input 
                 id="dropzone-file" 
-                type="file" 
-                name="${this.#fileFieldName}" 
                 class="hidden"
+                type="file" 
+                name="${this.#fileFieldName}"
+                accept="${this.#allowedFileTypes}"
                 multiple
               >
             </label>
@@ -210,6 +211,7 @@ class FileUploader extends HTMLElement {
   };
 
   #validateFile(file: File): ValidationResult {
+    // TODO: is this needed with the `accept` attribute?
     if (this.#allowedFileTypes && !this.#allowedFileTypes.includes(file.type)) {
       return {
         valid: false,
