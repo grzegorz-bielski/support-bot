@@ -122,39 +122,6 @@ object ContextView extends HtmxView:
       div(role             := "tabpanel", cls := "tab-content bg-base-100 border-base-300 rounded-box p-2 md:p-6", content),
     )
 
-  // private def retrievalSettings() =
-  //   collapse(
-  //     opened = false,
-  //     collapseTitle = "Retrieval Settings",
-  //     collapseContent = div(
-  //       form(
-  //         cls := "form-control",
-  //         label(
-  //           cls         := "label",
-  //           "Top K",
-  //         ),
-  //         input(
-  //           cls         := "input",
-  //           `type`      := "number",
-  //           placeholder := "Type the number of top K",
-  //         ),
-  //         label(
-  //           cls         := "label",
-  //           "Fragment Lookup Range",
-  //         ),
-  //         input(
-  //           cls         := "input",
-  //           `type`      := "number",
-  //           placeholder := "Type the number of fragment lookup range",
-  //         ),
-  //         button(
-  //           cls         := "btn btn-primary",
-  //           "Save",
-  //         ),
-  //       ),
-  //     ),
-  //   )
-
   private def contextSettings(
     contextInfo: ContextInfo,
     contextUpdateUrl: String,
@@ -329,6 +296,7 @@ object ContextView extends HtmxView:
                 "hover:bg-base-300 active:bg-base-400 focus:bg-base-400 outline-none",
               ).mkString(" "),
               "Files",
+              // TODO: add folder icon to the right, right now it breaks the summary marker
               // folderIcon(),
             ),
             files,
