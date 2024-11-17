@@ -57,6 +57,8 @@ final case class Prompt(
   queryContext: Option[String],
   template: PromptTemplate,
 ) derives ConfiguredJsonValueCodec:
+  import PromptTemplate.*
+  
   def render: RenderedPrompt =
     template match
       case tmpl: PromptTemplate.Structured =>
@@ -69,8 +71,8 @@ final case class Prompt(
           examples = tmpl.examples,
           user = Vector(
             (tmpl.queryContextTemplate, queryContext)
-              .mapN((tmpl, query) => tmpl.replace("{{context}}", query)),
-            tmpl.queryTemplate.replace("{{query}}", query).some,
+              .mapN((tmpl, query) => tmpl.replace(contextVar, query)),
+            tmpl.queryTemplate.replace(queryVar, query).some,
             tmpl.precognition,
             tmpl.outputFormatting,
           ).map(_.getOrElse("")).mkString("\n"),

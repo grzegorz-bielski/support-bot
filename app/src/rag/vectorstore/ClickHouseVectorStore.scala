@@ -11,7 +11,6 @@ import org.typelevel.log4cats.*
 import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
 import unindent.*
-// import java.util.Base64
 import java.util.UUID
 
 import supportbot.clickhouse.*
@@ -69,30 +68,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .flatMap: value =>
         info"Document $documentId embedding exists: $value".as(value)
 
-  // TODO: query by all documents in the context??
-
   def retrieve(embedding: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
-    // Workaround for the lack of support for inequality joins in CH
-    // `BETWEEN` and `IN` doesn't work with CH joins
-    // and for inequality you need to turn on experimental settings:
-    // https://clickhouse.com/docs/en/sql-reference/statements/select/join#experimental-join-with-inequality-conditions-for-columns-from-different-tables
-
-    val lookBackQueryFragment =
-      (options.fragmentLookupRange.lookBack until 0 by -1)
-        .map: i =>
-          i"""
-          ae.fragment_index = e.matched_fragment_index - $i OR
-          """
-        .mkString("\n")
-
-    val lookAheadQueryFragment =
-      (1 to options.fragmentLookupRange.lookAhead)
-        .map: i =>
-          i"""
-          ae.fragment_index = e.matched_fragment_index + $i OR
-          """
-        .mkString("\n")
-
     client
       .streamQueryJson[ClickHouseRetrievedRow]:
         i"""
@@ -101,8 +77,8 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
               SELECT 
                 document_id,
                 context_id,
-                fragment_index as matched_fragment_index,
-                chunk_index as matched_chunk_index,
+                fragment_index AS matched_fragment_index,
+                chunk_index AS matched_chunk_index,
                 value,
                 metadata,
                 cosineDistance(embedding, [${embedding.value.mkString(", ")}]) AS score
@@ -128,10 +104,10 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
           ON 
             ae.context_id = e.context_id AND 
             ae.document_id = e.document_id
-          AND
-            $lookBackQueryFragment
-            $lookAheadQueryFragment
-            ae.fragment_index = e.matched_fragment_index
+          WHERE
+            fragment_index BETWEEN 
+            matched_fragment_index - ${options.fragmentLookupRange.lookBack} AND 
+            matched_fragment_index + ${options.fragmentLookupRange.lookAhead}
           ORDER BY toUInt128(document_id), fragment_index, chunk_index
           LIMIT 1 BY document_id, fragment_index
           FORMAT JSONEachRow
@@ -145,13 +121,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
           fragmentIndex = row.fragment_index,
           score = row.score,
         )
-
-  // private def base64TextEncode(input: String): String =
-  //   val charset      = "UTF-8"
-  //   val encoder      = Base64.getEncoder // RFC4648 as on the decoder side in CH
-  //   val encodedBytes = encoder.encode(input.getBytes(charset))
-
-  //   String(encodedBytes, charset)
+      .evalTap(retrieved => info"$retrieved")
 
 object ClickHouseVectorStore:
   def of(using client: ClickHouseClient[IO]): IO[ClickHouseVectorStore] =

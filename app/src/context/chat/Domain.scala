@@ -15,7 +15,7 @@ object QueryId:
 
 final case class ChatQuery(content: String)
 object ChatQuery:
-  // TODO: move this codec to controller ?
+  // TODO: move this codec to controller or ... create dto?
   given FormDataDecoder[ChatQuery] = (
     field[String]("content")
   ).map(ChatQuery.apply)

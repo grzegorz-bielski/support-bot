@@ -17,5 +17,8 @@ enum Model(val name: String, val contextLength: Int):
 object Model:
   export ModelCodecs.given
 
+  def from(name: String): Option[Model] = 
+    Model.values.find(_.name == name)
+
   lazy val defaultChatModel       = Model.Llama31
   lazy val defaultEmbeddingsModel = Model.SnowflakeArcticEmbed

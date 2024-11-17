@@ -20,9 +20,12 @@ trait HtmxView:
   lazy val `sse-swap`: HtmxAttr    = attr("sse-swap")
   lazy val `sse-close`: HtmxAttr   = attr("sse-close")
   
+  // html elements not in scalatags
   lazy val dialog = tag("dialog")
 
+  // custom elements
   lazy val fileUploader = tag("file-uploader")
+  // lazy val themeController = tag("theme-controller")
 
   def appLink(path: String, child: Modifier, attrs: Modifier*): TypedTag[String] =
     val allAttrs = Seq(

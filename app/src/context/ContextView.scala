@@ -5,7 +5,7 @@ import cats.effect.*
 import cats.syntax.all.*
 import org.http4s.{scalatags as _, h2 as _, *}
 import scalatags.Text.all.*
-import scalatags.Text.tags2.{progress}
+import scalatags.Text.tags2.{progress, details, summary}
 
 import context.chat.*
 
@@ -16,24 +16,39 @@ object ContextView extends HtmxView:
   private val uploadModalId       = "uploadModal"
 
   def view(
-    context: ContextInfo,
+    contextInfo: ContextInfo,
     chatPostUrl: String,
+    contextUpdateUrl: String,
     uploadUrl: String,
     documents: Vector[Document.Info],
     fileFieldName: String,
+    documentDeleteUrl: DocumentDeleteUrl
   )(using AppConfig) = RootLayoutView.view(
     div(
-      configMenu(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName),
-      div(cls := "divider", aria.hidden := true, "workbench"),
-      ChatView.messages(),
-      ChatView.chatForm(postUrl = chatPostUrl),
+      cls := "grid grid-cols-1 md:grid-cols-3 gap-6",
+      div(
+        cls := "md:col-span-2",
+        configMenu(
+          uploadUrl = uploadUrl,
+          contextUpdateUrl = contextUpdateUrl,
+          documents = documents,
+          fileFieldName = fileFieldName,
+          contextInfo = contextInfo,
+          documentDeleteUrl = documentDeleteUrl,
+        ),
+      ),
+      div(
+        div(cls := "divider", aria.hidden := true, "workbench"),
+        ChatView.messages(),
+        ChatView.chatForm(postUrl = chatPostUrl),
+      ),
     ),
   )
 
-  def uploadedDocuments(docs: Vector[Document.Ingested]) =
+  def uploadedDocuments(docs: Vector[Document.Ingested], documentDeleteUrl: DocumentDeleteUrl) =
     ul(
       `hx-swap-oob` := s"beforeend:#$uploadedFilesListId",
-      docs.map(ingested => documentItem(ingested.info)),
+      docs.map(ingested => documentItem(documentDeleteUrl)(ingested.info)),
     )
 
   def contextsOverview(contexts: Vector[ContextInfo])(using AppConfig) =
@@ -75,91 +90,169 @@ object ContextView extends HtmxView:
       ),
     )
 
-  private def configMenu(uploadUrl: String, documents: Vector[Document.Info], fileFieldName: String) =
+  private def configMenu(
+    uploadUrl: String,
+    contextUpdateUrl: String,
+    documents: Vector[Document.Info],
+    fileFieldName: String,
+    contextInfo: ContextInfo,
+    documentDeleteUrl: DocumentDeleteUrl
+  ) =
     div(
-      cls := "grid grid-cols-1 md:grid-cols-2 gap-4 py-4",
-      div(knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName)),
-      div(promptSettings()),
-      div(retrievalSettings()),
+      role := "tablist",
+      cls  := "tabs tabs-lifted",
+      tab(
+        "Knowledge Base",
+        knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName, documentDeleteUrl = documentDeleteUrl),
+        checked = true,
+      ),
+      tab("Context Settings", contextSettings(contextInfo = contextInfo, contextUpdateUrl = contextUpdateUrl)),
     )
 
-  private def retrievalSettings() =
-    collapse(
-      opened = false,
-      collapseTitle = "Retrieval Settings",
-      collapseContent = div(
-        form(
-          cls := "form-control",
-          label(
-            cls         := "label",
-            "Top K",
+  private def tab(name: String, content: Modifier, checked: Boolean = false) =
+    Seq(
+      input(
+        `type`             := "radio",
+        attr("name")       := "my_tabs_2",
+        role               := "tab",
+        cls                := "tab bg-inherit min-w-36 focus:[box-shadow:none] checked:[background-image:none]",
+        attr("aria-label") := name,
+        Option.when(checked)(attr("checked") := "checked"),
+      ),
+      div(role             := "tabpanel", cls := "tab-content bg-base-100 border-base-300 rounded-box p-2 md:p-6", content),
+    )
+
+  private def contextSettings(
+    contextInfo: ContextInfo,
+    contextUpdateUrl: String,
+  ) =
+    val promptTemplateJson =
+      contextInfo.promptTemplate.asJson(indentStep = 2).combineAll
+
+    div(
+      form(
+        `hx-post` := contextUpdateUrl,
+        `hx-swap` := "none",
+        div(
+          cls := "grid grid-cols-1 md:grid-cols-2 gap-2",
+          formInput(
+            labelValue = "Name",
+            fieldName = "name",
+            value = contextInfo.name,
           ),
-          input(
-            cls         := "input",
-            `type`      := "number",
-            placeholder := "Type the number of top K",
+          formInput(
+            labelValue = "Description",
+            fieldName = "description",
+            value = contextInfo.description,
           ),
-          label(
-            cls         := "label",
-            "Fragment Lookup Range",
-          ),
-          input(
-            cls         := "input",
-            `type`      := "number",
-            placeholder := "Type the number of fragment lookup range",
-          ),
-          button(
-            cls         := "btn btn-primary",
-            "Save",
-          ),
+        ),
+        formTextarea(
+          labelValue = "Prompt Template",
+          fieldName = "promptTemplate",
+          value = promptTemplateJson,
+        ),
+        formSelect(
+          labelValue = "Chat Model",
+          fieldName = "chatModel",
+          options = modelOptions(contextInfo.chatModel),
+        ),
+        formSelect(
+          labelValue = "Embeddings Model",
+          fieldName = "embeddingsModel",
+          options = modelOptions(contextInfo.embeddingsModel),
+        ),
+        button(
+          cls := "btn btn-secondary block ml-auto mt-2",
+          "Save",
         ),
       ),
     )
 
-  private def promptSettings() =
-    collapse(
-      opened = false,
-      collapseTitle = "Prompt Settings",
-      collapseContent = div(
-        form(
-          cls := "form-control",
-          label(
-            cls         := "label",
-            "Prompt Template",
-          ),
-          textarea(
-            cls         := "textarea h-24",
-            placeholder := "Type your prompt template here",
-          ),
-          label(
-            cls         := "label",
-            "Prompt Options",
-          ),
-          textarea(
-            cls         := "textarea h-24",
-            placeholder := "Type your prompt options here",
-          ),
-          label(
-            cls         := "label",
-            "Prompt Options",
-          ),
-          textarea(
-            cls         := "textarea h-24",
-            placeholder := "Type your prompt options here",
-          ),
-          button(
-            cls         := "btn btn-primary",
-            "Save",
-          ),
-        ),
+  private def formTextarea(labelValue: String, fieldName: String, value: String) =
+    formControl(
+      labelValue,
+      textarea(
+        cls  := "textarea textarea-bordered w-full h-64 bg-base-200",
+        name := fieldName,
+        value,
       ),
     )
 
-  private def documentItem(document: Document.Info) =
+  private def formInput(labelValue: String, fieldName: String, value: String) =
+    formControl(
+      labelValue,
+      input(
+        cls           := "input input-bordered w-full bg-base-200",
+        name          := fieldName,
+        attr("value") := value,
+      ),
+    )
+
+  final case class SelectOption(label: String, value: String, selected: Boolean = false)
+
+  private def formSelect(labelValue: String, fieldName: String, options: Vector[SelectOption]) =
+    formControl(
+      labelValue,
+      select(
+        cls  := "select select-bordered w-full bg-base-200",
+        name := fieldName,
+        options.map: op =>
+          option(
+            value := op.value,
+            Option.when(op.selected)(selected := true),
+            op.label,
+          ),
+      ),
+    )
+
+  private def modelOptions(current: Model) = Model.values.toVector.map: model =>
+    SelectOption(
+      label = model.name,
+      value = model.name,
+      selected = model == current,
+    )
+
+  private def formControl(labelValue: String, input: Modifier) =
+    label(
+      cls := "form-control w-full",
+      div(
+        cls := "label",
+        span(
+          cls := "label-text",
+          labelValue,
+        ),
+      ),
+      input,
+    )
+
+  type DocumentDeleteUrl = Document.Info => String
+
+  private def documentItem(documentDeleteUrl: DocumentDeleteUrl)(document: Document.Info) =
+    val documentFileId = s"file-${document.id}"
+
     li(
-      a(
-        documentIcon(),
-        s"${document.name} - v${document.version}",
+      id := documentFileId,
+      cls := "group rounded-r-lg hover:bg-base-300 focus-within:bg-base-300 outline-none", 
+      div(
+        cls := "min-h-8 py-2 px-3 text-xs flex gap-3 items-center",
+        span(documentIcon()),
+        span(cls                   := "text-wrap break-all", s"${document.name} - v${document.version}"),
+        button(
+          `hx-delete` := documentDeleteUrl(document),
+          `hx-target` := s"#$documentFileId",
+          `hx-swap`   := "outerHTML",
+          cls := "btn btn-xs btn-ghost btn-square opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 mr-0 ml-auto transition-none",
+          "✕",
+        ),
+      ),
+    )
+
+  private def emptyItem() =
+    li(
+      cls := "hidden last:block",
+      div(
+        cls := "px-4 py-8 flex justify-center",
+        p("Nothing here yet."),
       ),
     )
 
@@ -167,29 +260,60 @@ object ContextView extends HtmxView:
     uploadUrl: String,
     fileFieldName: String,
     documents: Vector[Document.Info],
+    documentDeleteUrl: DocumentDeleteUrl
   ) =
-    collapse(
-      opened = true,
-      collapseTitle = "Knowledge Base",
-      collapseContent = div(
-        h3("Files"),
+
+    val files =
+      div(
         ul(
+          cls := "max-h-96 overflow-y-scroll",
           id  := uploadedFilesListId,
-          cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s",
-          documents.map(documentItem),
+          emptyItem(),
+          documents.map(documentItem(documentDeleteUrl)),
         ),
-        modal(
-          modalId = uploadModalId,
-          buttonTitle = "Upload more",
-          modalTitle = "Upload your files",
-          modalContent = uploadForm(
-            uploadUrl = uploadUrl,
-            fileFieldName = fileFieldName,
+      )
+
+    val Modal(uploadFilesButton, uploadFilesModalWindow) = modal(
+      modalId = uploadModalId,
+      buttonTitle = "Upload",
+      modalTitle = "Upload your files",
+      modalContent = uploadForm(
+        uploadUrl = uploadUrl,
+        fileFieldName = fileFieldName,
+      ),
+      buttonExtraClasses = Vector("btn-secondary block ml-auto"),
+    )
+
+    div(
+      ul(
+        cls := "bg-base-200 rounded-lg w-full max-w-s mb-4",
+        li(
+          details(
+            attr("open") := true,
+            summary(
+              cls := Vector(
+                "p-4 cursor-pointer rounded-lg",
+                "hover:bg-base-300 active:bg-base-400 focus:bg-base-400 outline-none",
+              ).mkString(" "),
+              "Files",
+              // TODO: add folder icon to the right, right now it breaks the summary marker
+              // folderIcon(),
+            ),
+            files,
+            div(
+              cls := "p-2",
+              uploadFilesButton
+            ),
           ),
-          buttonExtraClasses = Vector("btn-secondary block ml-auto"),
         ),
       ),
+      uploadFilesModalWindow,
     )
+
+  final case class Modal(
+    button: Modifier,
+    window: Modifier,
+  )
 
   private def modal(
     modalId: String,
@@ -197,16 +321,16 @@ object ContextView extends HtmxView:
     modalTitle: String,
     modalContent: Modifier,
     buttonExtraClasses: Vector[String] = Vector.empty,
-  ) =
-    Vector(
-      button(
+  ): Modal =
+    Modal(
+      button = button(
         cls     := "btn " ++ buttonExtraClasses.mkString(" "),
         onclick := s"$modalId.showModal()",
         buttonTitle,
       ),
-      dialog(
-        id      := modalId,
-        cls     := "modal modal-bottom sm:modal-middle",
+      window = dialog(
+        id  := modalId,
+        cls := "modal modal-bottom sm:modal-middle",
         div(
           cls       := "modal-box",
           form(
@@ -226,24 +350,42 @@ object ContextView extends HtmxView:
 
   // https://uploadcare.com/blog/how-to-make-a-drag-and-drop-file-uploader/
   // https://http4s.org/v1/docs/multipart.html
-  private def uploadForm(
-    uploadUrl: String,
-    fileFieldName: String,
-  )   =
+  private def uploadForm(uploadUrl: String, fileFieldName: String) =
     fileUploader(
-      attr("allowed-types")   :=
-        Vector(
-          "application/pdf",
-          "text/plain",
-          "text/html",
-          "application/msword",
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          "application/epub+zip",
-        ).mkString(","),
-      attr("max-size")        := "1073741824", // 1GiB
       attr("upload-url")      := uploadUrl,
       attr("file-field-name") := fileFieldName,
       attr("modal-id")        := uploadModalId,
+      attr("max-size")        := "1073741824", // 1GiB
+      attr("allowed-types")   :=
+        Vector(
+          // General
+          "application/pdf",
+          "text/plain",
+          "text/html",
+          "text/csv",
+          "text/xml",
+          "application/rtf",
+          "application/json",
+          "application/xml",
+          "application/xhtml+xml",
+          // MS
+          "application/vnd.ms-excel",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          // OpenOffice
+          "application/vnd.ms-powerpoint",
+          "application/x-vnd.oasis.opendocument.spreadsheet",
+          "application/vnd.oasis.opendocument.spreadsheet",
+          "application/vnd.oasis.opendocument.presentation",
+          "application/vnd.oasis.opendocument.text",
+          // Other
+          "application/x-abiword",
+          // Ebooks
+          "application/epub+zip",
+          "application/x-mobipocket-ebook",
+        ).mkString(","),
     )
 
   private def collapse(
@@ -267,6 +409,25 @@ object ContextView extends HtmxView:
       div(
         cls    := "collapse-content",
         collapseContent,
+      ),
+    )
+
+  private def folderIcon() =
+    import scalatags.Text.svgTags.{attr as _, *}
+    import scalatags.Text.svgAttrs.*
+
+    svg(
+      cls :="inline",
+      xmlns                := "http://www.w3.org/2000/svg",
+      fill                 := "none",
+      viewBox              := "0 0 24 24",
+      attr("stroke-width") := "1.5",
+      stroke               := "currentColor",
+      cls                  := "h-4 w-4",
+      path(
+        attr("stroke-linecap")  := "round",
+        attr("stroke-linejoin") := "round",
+        d                       := "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z",
       ),
     )
 
