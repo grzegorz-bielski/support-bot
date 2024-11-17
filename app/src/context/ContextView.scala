@@ -22,16 +22,19 @@ object ContextView extends HtmxView:
     uploadUrl: String,
     documents: Vector[Document.Info],
     fileFieldName: String,
+    documentDeleteUrl: DocumentDeleteUrl
   )(using AppConfig) = RootLayoutView.view(
     div(
-      cls := "grid grid-cols-1 md:grid-cols-2 gap-6",
+      cls := "grid grid-cols-1 md:grid-cols-3 gap-6",
       div(
+        cls := "md:col-span-2",
         configMenu(
           uploadUrl = uploadUrl,
           contextUpdateUrl = contextUpdateUrl,
           documents = documents,
           fileFieldName = fileFieldName,
           contextInfo = contextInfo,
+          documentDeleteUrl = documentDeleteUrl,
         ),
       ),
       div(
@@ -42,10 +45,10 @@ object ContextView extends HtmxView:
     ),
   )
 
-  def uploadedDocuments(docs: Vector[Document.Ingested]) =
+  def uploadedDocuments(docs: Vector[Document.Ingested], documentDeleteUrl: DocumentDeleteUrl) =
     ul(
       `hx-swap-oob` := s"beforeend:#$uploadedFilesListId",
-      docs.map(ingested => documentItem(ingested.info)),
+      docs.map(ingested => documentItem(documentDeleteUrl)(ingested.info)),
     )
 
   def contextsOverview(contexts: Vector[ContextInfo])(using AppConfig) =
@@ -93,13 +96,14 @@ object ContextView extends HtmxView:
     documents: Vector[Document.Info],
     fileFieldName: String,
     contextInfo: ContextInfo,
+    documentDeleteUrl: DocumentDeleteUrl
   ) =
     div(
       role := "tablist",
       cls  := "tabs tabs-lifted",
       tab(
         "Knowledge Base",
-        knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName),
+        knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName, documentDeleteUrl = documentDeleteUrl),
         checked = true,
       ),
       tab("Context Settings", contextSettings(contextInfo = contextInfo, contextUpdateUrl = contextUpdateUrl)),
@@ -157,10 +161,6 @@ object ContextView extends HtmxView:
   ) =
     val promptTemplateJson =
       contextInfo.promptTemplate.asJson(indentStep = 2).combineAll
-
-    // println(
-    //   "contextInfo" -> contextInfo,
-    // )
 
     div(
       form(
@@ -231,9 +231,8 @@ object ContextView extends HtmxView:
         name := fieldName,
         options.map: op =>
           option(
-            value    := op.value,
+            value := op.value,
             Option.when(op.selected)(selected := true),
-            // selected := op.selected,
             op.label,
           ),
       ),
@@ -259,11 +258,34 @@ object ContextView extends HtmxView:
       input,
     )
 
-  private def documentItem(document: Document.Info) =
+  type DocumentDeleteUrl = Document.Info => String
+
+  private def documentItem(documentDeleteUrl: DocumentDeleteUrl)(document: Document.Info) =
+    val documentFileId = s"file-${document.id}"
+
     li(
+      id := documentFileId,
+      cls := "group rounded-r-lg hover:bg-base-300 focus-within:bg-base-300 outline-none", 
       div(
+        cls := "min-h-8 py-2 px-3 text-xs flex gap-3 items-center",
         span(documentIcon()),
-        span(cls := "text-wrap break-all", s"${document.name} - v${document.version}"),
+        span(cls                   := "text-wrap break-all", s"${document.name} - v${document.version}"),
+        button(
+          `hx-delete` := documentDeleteUrl(document),
+          `hx-target` := s"#$documentFileId",
+          `hx-swap`   := "outerHTML",
+          cls := "btn btn-xs btn-ghost btn-square opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 mr-0 ml-auto transition-none",
+          "✕",
+        ),
+      ),
+    )
+
+  private def emptyItem() =
+    li(
+      cls := "hidden last:block",
+      div(
+        cls := "px-4 py-8 flex justify-center",
+        p("Nothing here yet."),
       ),
     )
 
@@ -271,20 +293,22 @@ object ContextView extends HtmxView:
     uploadUrl: String,
     fileFieldName: String,
     documents: Vector[Document.Info],
+    documentDeleteUrl: DocumentDeleteUrl
   ) =
 
-    val files = div(
-      ul(
-        cls := "max-h-60 overflow-y-scroll",
-        id  := uploadedFilesListId,
-        // cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s",
-        documents.map(documentItem),
-      ),
-    )
+    val files =
+      div(
+        ul(
+          cls := "max-h-96 overflow-y-scroll",
+          id  := uploadedFilesListId,
+          emptyItem(),
+          documents.map(documentItem(documentDeleteUrl)),
+        ),
+      )
 
-    val uploadFilesButton = modal(
+    val Modal(uploadFilesButton, uploadFilesModalWindow) = modal(
       modalId = uploadModalId,
-      buttonTitle = "Upload files",
+      buttonTitle = "Upload",
       modalTitle = "Upload your files",
       modalContent = uploadForm(
         uploadUrl = uploadUrl,
@@ -295,21 +319,33 @@ object ContextView extends HtmxView:
 
     div(
       ul(
-        cls := "menu menu-xs bg-base-200 rounded-lg w-full max-w-s mb-4",
+        cls := "bg-base-200 rounded-lg w-full max-w-s mb-4",
         li(
           details(
-            // Option.when(documents.length < 30)(attr("open") := true),
             attr("open") := true,
             summary(
-              folderIcon(),
+              cls := Vector(
+                "p-4 cursor-pointer rounded-lg",
+                "hover:bg-base-300 active:bg-base-400 focus:bg-base-400 outline-none",
+              ).mkString(" "),
               "Files",
+              // folderIcon(),
             ),
             files,
+            div(
+              cls := "p-2",
+              uploadFilesButton
+            ),
           ),
         ),
       ),
-      uploadFilesButton,
+      uploadFilesModalWindow,
     )
+
+  final case class Modal(
+    button: Modifier,
+    window: Modifier,
+  )
 
   private def modal(
     modalId: String,
@@ -317,16 +353,16 @@ object ContextView extends HtmxView:
     modalTitle: String,
     modalContent: Modifier,
     buttonExtraClasses: Vector[String] = Vector.empty,
-  ) =
-    Vector(
-      button(
+  ): Modal =
+    Modal(
+      button = button(
         cls     := "btn " ++ buttonExtraClasses.mkString(" "),
         onclick := s"$modalId.showModal()",
         buttonTitle,
       ),
-      dialog(
-        id      := modalId,
-        cls     := "modal modal-bottom sm:modal-middle",
+      window = dialog(
+        id  := modalId,
+        cls := "modal modal-bottom sm:modal-middle",
         div(
           cls       := "modal-box",
           form(
@@ -413,6 +449,7 @@ object ContextView extends HtmxView:
     import scalatags.Text.svgAttrs.*
 
     svg(
+      cls :="inline",
       xmlns                := "http://www.w3.org/2000/svg",
       fill                 := "none",
       viewBox              := "0 0 24 24",

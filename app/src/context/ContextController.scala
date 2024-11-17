@@ -22,7 +22,7 @@ import java.util.UUID
 
 import context.chat.*
 import supportbot.rag.vectorstore.{VectorStoreRepository, RetrieveOptions, LookupRange}
-import supportbot.rag.DocumentRepository
+import supportbot.rag.*
 import supportbot.rag.ingestion.IngestionService
 
 final class ContextController(using
@@ -40,6 +40,8 @@ final class ContextController(using
   private val fileFieldName = "file"
 
   protected val routes = IO:
+    val documentDeleteUrl = (doc: Document.Info) => s"/$prefix/${doc.contextId}/documents/${doc.id}"
+
     HttpRoutes.of[IO]:
       case GET -> Root =>
         for
@@ -69,6 +71,7 @@ final class ContextController(using
                              contextUpdateUrl = s"/$prefix/${contextInfo.id}/update",
                              documents = documents,
                              fileFieldName = fileFieldName,
+                             documentDeleteUrl = documentDeleteUrl,
                            ),
                          )
           yield response
@@ -153,8 +156,17 @@ final class ContextController(using
 
                 ingestedDocuments.flatMap: docs =>
                   Ok(
-                    ContextView.uploadedDocuments(docs),
+                    ContextView.uploadedDocuments(docs, documentDeleteUrl = documentDeleteUrl),
                   )
+
+      case req @ DELETE -> Root / ContextIdVar(contextId) / "documents" / DocumentIdVar(documentId) =>
+        getContextOrNotFound(contextId): context =>
+          // TODO: validate if the document belongs to the context
+          for
+            _        <- documentRepository.delete(documentId)
+            _        <- info"Deleted document: $documentId"
+            response <- Ok()
+          yield response
 
   private def getContextOrNotFound(contextId: ContextId)(fn: ContextInfo => IO[Response[IO]]): IO[Response[IO]] =
     contextRepository
@@ -183,3 +195,8 @@ object ContextController:
     def unapply(str: String): Option[ContextId] =
       if str.isEmpty then None
       else scala.util.Try(UUID.fromString(str)).toOption.map(ContextId.apply)
+
+  object DocumentIdVar:
+    def unapply(str: String): Option[DocumentId] =
+      if str.isEmpty then None
+      else scala.util.Try(UUID.fromString(str)).toOption.map(DocumentId.apply)
