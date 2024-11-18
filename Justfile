@@ -9,6 +9,9 @@ app-dev:
         npm run esbuild:watch --workspace app
     )
 
+app-infra-fresh:
+    docker-compose -f ./docker-compose.yml up --pull=always
+
 app-clean:
     scala-cli clean .
 

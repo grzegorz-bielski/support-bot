@@ -8,10 +8,19 @@ import scala.concurrent.duration.{span as _, *}
 object ChatView extends HtmxView:
   private val messagesViewId = "chat-messages"
 
+  def view(chatPostUrl: String) = 
+    div(
+        cls := "rounded-box pl-2 md:col-span-2 md:bg-base-200",
+        // div(cls := "divider", aria.hidden := true, "workbench"),
+        messages(),
+        chatForm(postUrl = chatPostUrl),
+      )
+
   def chatForm(
     postUrl: String,
   ) =
     form(
+      cls := "mr-2 pb-2",
       `hx-post`   := postUrl,
       `hx-target` := s"#$messagesViewId",
       `hx-swap`   := "beforeend scroll:bottom",
@@ -68,6 +77,7 @@ object ChatView extends HtmxView:
 
   def messages() =
     div(
+      cls := "py-2 md:h-[calc(100dvh-12rem)] md:overflow-y-scroll",
       id := messagesViewId,
     )(
       div(
