@@ -3,8 +3,7 @@ name: support-bot
 services:
 
   clickhouse:
-    # image: clickhouse/clickhouse-server:24.9.2.42-alpine
-    image: clickhouse/clickhouse-server:head-alpine
+    image: clickhouse/clickhouse-server:head-alpine # the bleeding edge with all the fixes (and bugs)
     ports:
       - "8123:8123"
     ulimits:

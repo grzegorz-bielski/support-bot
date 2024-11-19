@@ -53,8 +53,8 @@ lazy val AllMigrations = Vector(
                 metadata Map(String, String),                                              -- any additional metadata of the chunk
                 embedding Array(Float32),                                                  -- embedding vector of the chunk
                 updated_at DateTime DEFAULT now(),
-                INDEX ann_idx embedding TYPE vector_similarity('hnsw', 'cosineDistance')  -- ANN index for fast retrieval of embeddings similar according to cosine distance
-                -- INDEX inv_idx value TYPE full_text()                                       -- inverted index for full-text search, doesn't work with ann: https://github.com/ClickHouse/ClickHouse/issues/71381
+                INDEX ann_idx embedding TYPE vector_similarity('hnsw', 'cosineDistance'),  -- ANN index for fast retrieval of embeddings similar according to cosine distance
+                INDEX inv_idx value TYPE full_text()
             )
             ENGINE = MergeTree()                                           -- not replacing, as we want to keep all embeddings for a given fragment_index
             ORDER BY (toUInt128(context_id), toUInt128(document_id), fragment_index, chunk_index) -- CH's UUIDs are sorted by their second half, so we need to convert them to UInt128 for proper ordering

@@ -25,9 +25,9 @@ object ContextView extends HtmxView:
     documentDeleteUrl: DocumentDeleteUrl
   )(using AppConfig) = RootLayoutView.view(
     div(
-      cls := "grid grid-cols-1 md:grid-cols-3 gap-6",
+      cls := "grid grid-cols-1 md:grid-cols-5 gap-x-16",
       div(
-        cls := "md:col-span-2",
+        cls := "md:col-span-3",
         configMenu(
           uploadUrl = uploadUrl,
           contextUpdateUrl = contextUpdateUrl,
@@ -37,11 +37,7 @@ object ContextView extends HtmxView:
           documentDeleteUrl = documentDeleteUrl,
         ),
       ),
-      div(
-        div(cls := "divider", aria.hidden := true, "workbench"),
-        ChatView.messages(),
-        ChatView.chatForm(postUrl = chatPostUrl),
-      ),
+      ChatView.view(chatPostUrl = chatPostUrl),
     ),
   )
 
@@ -100,7 +96,7 @@ object ContextView extends HtmxView:
   ) =
     div(
       role := "tablist",
-      cls  := "tabs tabs-lifted",
+      cls  := "tabs tabs-bordered",
       tab(
         "Knowledge Base",
         knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName, documentDeleteUrl = documentDeleteUrl),
@@ -113,13 +109,32 @@ object ContextView extends HtmxView:
     Seq(
       input(
         `type`             := "radio",
-        attr("name")       := "my_tabs_2",
+        attr("name")       := "my_tabs_1",
         role               := "tab",
-        cls                := "tab bg-inherit min-w-36 focus:[box-shadow:none] checked:[background-image:none]",
+        cls                := 
+          Vector(
+            "tab",
+            "min-w-36",
+            "focus:[box-shadow:none]",
+            "border-t-0",
+            "border-x-0",
+            "bg-transparent",
+            "checked:bg-none",
+            "checked:bg-transparent",
+            "checked:hover:bg-transparent",
+            "checked:focus:bg-transparent",
+            "checked:hover:border-current",
+            "checked:focus:border-current",
+          )
+          .mkString(" "),
         attr("aria-label") := name,
         Option.when(checked)(attr("checked") := "checked"),
       ),
-      div(role             := "tabpanel", cls := "tab-content bg-base-100 border-base-300 rounded-box p-2 md:p-6", content),
+      div(
+        role             := "tabpanel", 
+        cls := "tab-content bg-base-100 pt-2 md:pt-6", 
+        content
+      ),
     )
 
   private def contextSettings(
@@ -232,7 +247,7 @@ object ContextView extends HtmxView:
 
     li(
       id := documentFileId,
-      cls := "group rounded-r-lg hover:bg-base-300 focus-within:bg-base-300 outline-none", 
+      cls := "group rounded-r-box hover:bg-base-300 focus-within:bg-base-300 outline-none", 
       div(
         cls := "min-h-8 py-2 px-3 text-xs flex gap-3 items-center",
         span(documentIcon()),
@@ -293,7 +308,7 @@ object ContextView extends HtmxView:
             summary(
               cls := Vector(
                 "p-4 cursor-pointer rounded-lg",
-                "hover:bg-base-300 active:bg-base-400 focus:bg-base-400 outline-none",
+                "hover:bg-base-300 active:bg-base-400 focus:bg-base-400 outline-none transition-colors",
               ).mkString(" "),
               "Files",
               // TODO: add folder icon to the right, right now it breaks the summary marker
