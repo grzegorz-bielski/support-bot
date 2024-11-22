@@ -1,5 +1,4 @@
 package supportbot
-package context
 package chat
 
 import org.http4s.FormDataDecoder
@@ -19,7 +18,3 @@ object ChatQuery:
   given FormDataDecoder[ChatQuery] = (
     field[String]("content")
   ).map(ChatQuery.apply)
-
-
-enum ChatEvent:
-  case QueryResponse, QueryClose

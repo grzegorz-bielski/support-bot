@@ -1,5 +1,4 @@
 package supportbot
-package context
 package chat
 
 import cats.syntax.all.*

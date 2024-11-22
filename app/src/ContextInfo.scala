@@ -1,5 +1,4 @@
 package supportbot
-package context
 
 import java.util.UUID
 import cats.effect.*

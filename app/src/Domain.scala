@@ -1,5 +1,4 @@
 package supportbot
-package context
 
 import java.util.UUID
 import cats.effect.*
@@ -7,10 +6,6 @@ import cats.syntax.all.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.*
 import unindent.*
-
-enum Example:
-  case User(text: String)
-  case Assistant(text: String)
 
 /** A prompt template.
   *
@@ -22,7 +17,7 @@ enum PromptTemplate derives ConfiguredJsonValueCodec:
     taskContext: Option[String] = None,          // system
     toneContext: Option[String] = None,          // system
     taskDescription: Option[String] = None,      // system
-    examples: Vector[Example] = Vector.empty,    // user & assistant back and forth
+    examples: Vector[PromptTemplate.Example] = Vector.empty,    // user & assistant back and forth
     queryTemplate: String,                       // user template, aka immediateTask, user
     queryContextTemplate: Option[String] = None, // user template
     precognition: Option[String] = None,         // user
@@ -32,7 +27,7 @@ enum PromptTemplate derives ConfiguredJsonValueCodec:
 
 final case class RenderedPrompt(
   system: Option[String],
-  examples: Vector[Example],
+  examples: Vector[PromptTemplate.Example],
   user: String,
   assistant: Option[String],
 )
@@ -51,6 +46,10 @@ object PromptTemplate:
     queryTemplate = i"""<query> $queryVar </query>""",
     queryContextTemplate = i"""<context> $contextVar </context>""".some,
   )
+
+  enum Example:
+    case User(text: String)
+    case Assistant(text: String)
 
 final case class Prompt(
   query: String,

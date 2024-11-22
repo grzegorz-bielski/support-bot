@@ -1,5 +1,4 @@
 package supportbot
-package context
 package chat
 
 import fs2.{Chunk as _, *}
@@ -15,18 +14,73 @@ import java.time.Duration
 import supportbot.rag.vectorstore.*
 import supportbot.rag.*
 
-final class ChatService(
+trait ChatService[F[_]]:
+  /** Start the query processing. This might take some time to complete, so it usually should be run in the background
+    * fiber.
+    *
+    * @param input
+    *   The input for the query.
+    */
+  def processQuery(input: ChatService.Input): F[Unit]
+
+  /** Subscribe to the query responses started in `processQuery`.
+    *
+    * @param queryId
+    *   The query id to subscribe to.
+    * @return
+    *   A stream of responses.
+    */
+  def subscribeToQueryResponses(queryId: QueryId): Stream[F, ChatService.Response]
+
+  /** Ask a question and wait for the response.
+    *
+    * @param input
+    *   The input for the query.
+    * @return
+    *   The response content.
+    */
+  final def ask(input: ChatService.Input)(using Concurrent[F]): F[String] =
+  Concurrent[F]
+    .background(processQuery(input))
+    .use: _ =>
+      subscribeToQueryResponses(input.queryId)
+        .collectWhile:
+          case ChatService.Response.Partial(_, content) => content
+        .compile
+        .string
+
+object ChatService:
+  final case class Input(
+    contextId: ContextId,
+    query: ChatQuery,
+    queryId: QueryId,
+    promptTemplate: PromptTemplate,
+    retrieveOptions: RetrieveOptions,
+    chatModel: Model,
+    embeddingsModel: Model,
+  )
+
+  trait WithQueryId:
+    def queryId: QueryId
+
+  enum ResponseType:
+    case Partial, Finished
+
+  enum Response(val eventType: ResponseType) extends WithQueryId:
+    case Partial(queryId: QueryId, content: String) extends Response(ResponseType.Partial)
+
+    case Finished(queryId: QueryId) extends Response(ResponseType.Finished)
+
+final class ChatServiceImpl(
   pubSub: PubSub[IO],
 )(using
   logger: Logger[IO],
   chatCompletionService: ChatCompletionService[IO],
   vectorStore: VectorStoreRepository[IO],
   embeddingService: EmbeddingService[IO],
-):
+) extends ChatService[IO]:
   import ChatService.*
-
-  // TODO:
-  // - chat history
+  import ChatServiceImpl.*
 
   // TODO: do not use xml tags in llama
   // private def appPrompt(query: String, context: Option[String]) = Prompt(
@@ -63,8 +117,6 @@ final class ChatService(
 
       // _ <- info"Retrieved embeddings: $retrievedEmbeddings"
 
-      topicId = queryId.toString
-
       // TODO: group retrieved embeddings by (documentId, version, fragmentIndex) and show them in chat
 
       contextChunks = retrievedEmbeddings.map(_.chunk)
@@ -80,19 +132,12 @@ final class ChatService(
       _ <- chatCompletionService
              .chatCompletion(prompt, model = chatModel)
              .map: chatMsg =>
-               PubSub.Message(
-                 topicId = topicId,
-                 eventType = ChatEvent.QueryResponse,
+               Response.Partial(
+                 queryId = queryId,
                  content = chatMsg.contentDeltas,
                )
              .onComplete:
-               Stream(
-                 PubSub.Message(
-                   topicId = topicId,
-                   eventType = ChatEvent.QueryClose,
-                   content = "Stream completed",
-                 ),
-               )
+               Stream(Response.Finished(queryId = queryId))
              .evalTap: chatMsg =>
                debug"Received chat message: $chatMsg"
              .evalTap(pubSub.publish)
@@ -105,30 +150,20 @@ final class ChatService(
         info"Processing the response for queryId: $queryId has been completed. (took: ${processingDuration.getSeconds} s)"
     yield ()
 
-  def subscribeToQueryResponses(queryId: QueryId): Stream[IO, PubSub.Message] =
+  def subscribeToQueryResponses(queryId: QueryId): Stream[IO, Response] =
     Stream.eval(info"Waiting for query completion: $queryId") *>
       pubSub
-        .subscribe(queryId.toString)
+        .subscribe(queryId)
         .timeout(5.minutes)
 
-object ChatService:
-  final case class Input(
-    contextId: ContextId,
-    query: ChatQuery,
-    queryId: QueryId,
-    promptTemplate: PromptTemplate,
-    retrieveOptions: RetrieveOptions,
-    chatModel: Model,
-    embeddingsModel: Model,
-  )
-
+object ChatServiceImpl:
   def of()(using
     ChatCompletionService[IO],
     ContextRepository[IO],
     VectorStoreRepository[IO],
     EmbeddingService[IO],
-  ): Resource[IO, ChatService] =
+  ): Resource[IO, ChatService[IO]] =
     for
       given Logger[IO] <- Slf4jLogger.create[IO].toResource
       pubSub           <- PubSub.resource[IO]
-    yield ChatService(pubSub)
+    yield ChatServiceImpl(pubSub)

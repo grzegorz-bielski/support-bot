@@ -1,5 +1,4 @@
 package supportbot
-package context
 
 import fs2.{Chunk as _, *}
 import fs2.io.*
@@ -20,7 +19,7 @@ import scalatags.Text.all.*
 import scala.concurrent.duration.{span as _, *}
 import java.util.UUID
 
-import context.chat.*
+import supportbot.chat.*
 import supportbot.rag.vectorstore.{VectorStoreRepository, RetrieveOptions, LookupRange}
 import supportbot.rag.*
 import supportbot.rag.ingestion.IngestionService
@@ -30,7 +29,7 @@ final class ContextController(using
   contextRepository: ContextRepository[IO],
   documentRepository: DocumentRepository[IO],
   ingestionService: IngestionService[IO],
-  chatService: ChatService,
+  chatService: ChatService[IO],
   appConfig: AppConfig,
 ) extends TopLevelHtmxController:
   import ContextController.*
@@ -80,11 +79,17 @@ final class ContextController(using
         getContextOrNotFound(contextId): context =>
           val eventStream: EventStream[IO] = chatService
             .subscribeToQueryResponses(queryId)
-            .map: message =>
-              ServerSentEvent(
-                data = ChatView.responseChunk(message.content).render.some,
-                eventType = message.eventType.toString.some,
-              )
+            .map: 
+              case resp @ ChatService.Response.Partial(_, content) =>
+                ServerSentEvent(
+                  data = ChatView.responseChunk(content).render.some,
+                  eventType = resp.eventType.toString.some,
+                )
+              case resp @ ChatService.Response.Finished(_)          =>
+                ServerSentEvent(
+                  data = none,
+                  eventType = resp.eventType.toString.some,
+                )
             .evalTap: msg =>
               debug"SSE message to send: $msg"
 
@@ -97,7 +102,7 @@ final class ContextController(using
           for
             query   <- req.as[ChatQuery]
             queryId <- QueryId.of
-            // TODO: use .background / Resource and maybe queue requests
+
             _       <- chatService
                          .processQuery(
                            ChatService.Input(
@@ -113,14 +118,14 @@ final class ContextController(using
                              embeddingsModel = context.embeddingsModel,
                            ),
                          )
-                         .start
+                         .start // fire and forget
             res     <-
               Ok(
                 ChatView.responseMessage(
                   query = query,
                   sseUrl = s"/$prefix/${context.id}/chat/responses?queryId=$queryId",
-                  queryResponseEvent = ChatEvent.QueryResponse.toString,
-                  queryCloseEvent = ChatEvent.QueryClose.toString,
+                  queryResponseEvent = ChatService.ResponseType.Partial.toString,
+                  queryCloseEvent = ChatService.ResponseType.Finished.toString,
                 ),
               )
           yield res
@@ -179,7 +184,7 @@ object ContextController:
   def of()(using
     ContextRepository[IO],
     DocumentRepository[IO],
-    ChatService,
+    ChatService[IO],
     IngestionService[IO],
     AppConfig,
   ): Resource[IO, ContextController] =

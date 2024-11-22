@@ -1,5 +1,4 @@
 package supportbot
-package context
 
 import cats.effect.*
 import cats.syntax.all.*
@@ -7,8 +6,7 @@ import org.http4s.{scalatags as _, h2 as _, *}
 import scalatags.Text.all.*
 import scalatags.Text.tags2.{progress, details, summary}
 
-import context.chat.*
-
+import supportbot.chat.*
 import supportbot.rag.*
 
 object ContextView extends HtmxView:

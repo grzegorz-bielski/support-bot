@@ -5,6 +5,7 @@ import cats.effect.std.*
 import cats.syntax.all.*
 import scribe.Level
 import com.comcast.ip4s.*
+import eu.timepit.refined.types.string.NonEmptyString
 
 final case class AppConfig(
   host: Host,
@@ -16,6 +17,7 @@ final case class AppConfig(
   maxEntitySizeInBytes: Long,
   inferenceEngine: InferenceEngine,
   clickhouse: ClickhouseConfig,
+  slack: SlackBotConfig,
 ):
   def isDev = env == EnvType.Local
 
@@ -45,6 +47,9 @@ object AppConfig:
         database = "default",
         resetOnStart = false,
       ),
+      slack = SlackBotConfig(
+        signingSecret = NonEmptyString.unsafeFrom("1b5d3e182525f8ad0296e457bf6aa559")
+      )
     )
 
 enum EnvType:
@@ -65,4 +70,8 @@ final case class ClickhouseConfig(
   password: String,
   database: String,
   resetOnStart: Boolean,
+)
+
+final case class SlackBotConfig(
+  signingSecret: NonEmptyString
 )

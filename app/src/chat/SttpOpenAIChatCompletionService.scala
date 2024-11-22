@@ -1,5 +1,4 @@
 package supportbot
-package context
 package chat
 
 import cats.syntax.all.*
@@ -64,8 +63,8 @@ object SttpOpenAIChatCompletionService:
       renderedPrompt.system.map(text => Message.SystemMessage(text)).toVector
 
     val examplesMessages = renderedPrompt.examples.map:
-      case Example.User(text)      => Message.UserMessage(Content.TextContent(text))
-      case Example.Assistant(text) => Message.AssistantMessage(text)
+      case PromptTemplate.Example.User(text)      => Message.UserMessage(Content.TextContent(text))
+      case PromptTemplate.Example.Assistant(text) => Message.AssistantMessage(text)
 
     val userMessage = Message.UserMessage(
       content = Content.TextContent(renderedPrompt.user),

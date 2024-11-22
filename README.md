@@ -14,3 +14,34 @@
 ```zsh
 just
 ```
+
+### slack setup
+
+manifest:
+```yml
+_metadata:
+  major_version: 1
+  minor_version: 1
+display_information:
+  name: supportbot
+  description: SupportBot App
+  background_color: "#080f06"
+features:
+  bot_user:
+    display_name: supportbot
+    always_online: false
+  slash_commands:
+    - command: /supportbot
+      url: https://principal-computed-worcester-encoding.trycloudflare.com/slack/slashCmd
+      description: Ask the supportbot
+      usage_hint: supportbot
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - commands
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
+```

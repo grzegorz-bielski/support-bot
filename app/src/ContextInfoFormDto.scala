@@ -1,5 +1,4 @@
 package supportbot
-package context
 
 import java.util.UUID
 import com.github.plokhotnyuk.jsoniter_scala.core.*

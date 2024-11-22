@@ -1,5 +1,4 @@
 package supportbot
-package context
 
 trait ContextRepository[F[_]]:
     def createOrUpdate(info: ContextInfo): F[Unit]

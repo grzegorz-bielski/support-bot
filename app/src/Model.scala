@@ -11,8 +11,9 @@ package supportbot
   */
 enum Model(val name: String, val contextLength: Int):
   // `contextLength` defined by `num_ctx` in Modelfile. Cannot be set in ollama through OpenAI API
-  case Llama31              extends Model("support-bot-llama", 31072)
+  case Llama31              extends Model("support-bot-llama", 31072) // custom local model image from ollama/LLamaModelFile
   case SnowflakeArcticEmbed extends Model("snowflake-arctic-embed", 512)
+  // TODO: research quantized binary embeddings models: i.e. https://cohere.com/blog/int8-binary-embeddings
 
 object Model:
   export ModelCodecs.given
