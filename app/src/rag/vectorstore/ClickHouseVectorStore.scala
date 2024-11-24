@@ -18,11 +18,22 @@ import supportbot.clickhouse.*
 final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]) extends VectorStoreRepository[IO]:
   import ClickHouseVectorStore.*
 
+  def delete(contextId: ContextId, documentId: DocumentId): IO[Unit] =
+    client
+      .executeQuery:
+        i"""
+        DELETE FROM embeddings
+        WHERE
+          context_id = toUUID('$contextId') AND
+          document_id = toUUID('$documentId')
+        """
+      .void
+
   def store(index: Vector[Embedding.Index]): IO[Unit] =
     index.headOption
       .traverse: embedding =>
         // TODO: maybe this should not be a part of the store method
-        documentEmbeddingsExists(embedding.documentId).ifM(
+        documentEmbeddingsExists(embedding.contextId, embedding.documentId).ifM(
           info"Embeddings for document ${embedding.documentId} already exists. Skipping the insertion.",
           storeEmbeddings(index),
         )
@@ -49,7 +60,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
     client.executeQuery(insertQuery) *>
       info"Stored ${embeddings.size} embeddings."
 
-  def documentEmbeddingsExists(documentId: DocumentId): IO[Boolean] =
+  def documentEmbeddingsExists(contextId: ContextId, documentId: DocumentId): IO[Boolean] =
     client
       .streamQueryTextLines:
         i"""
@@ -57,7 +68,9 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
          EXISTS(
           SELECT document_id 
           FROM embeddings 
-          WHERE document_id = toUUID('$documentId') 
+          WHERE 
+            context_id = toUUID('$contextId') AND 
+            document_id = toUUID('$documentId') 
           LIMIT 1
          )
         """.stripMargin

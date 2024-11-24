@@ -79,13 +79,13 @@ final class ContextController(using
         getContextOrNotFound(contextId): context =>
           val eventStream: EventStream[IO] = chatService
             .subscribeToQueryResponses(queryId)
-            .map: 
+            .map:
               case resp @ ChatService.Response.Partial(_, content) =>
                 ServerSentEvent(
                   data = ChatView.responseChunk(content).render.some,
                   eventType = resp.eventType.toString.some,
                 )
-              case resp @ ChatService.Response.Finished(_)          =>
+              case resp @ ChatService.Response.Finished(_)         =>
                 ServerSentEvent(
                   data = none,
                   eventType = resp.eventType.toString.some,
@@ -98,28 +98,27 @@ final class ContextController(using
 
       case req @ POST -> Root / ContextIdVar(contextId) / "chat" / "query" =>
         getContextOrNotFound(contextId): context =>
-          println("contextId: " -> contextId)
           for
             query   <- req.as[ChatQuery]
             queryId <- QueryId.of
 
-            _       <- chatService
-                         .processQuery(
-                           ChatService.Input(
-                             contextId = context.id,
-                             query = query,
-                             queryId = queryId,
-                             promptTemplate = context.promptTemplate,
-                             retrieveOptions = RetrieveOptions(
-                               topK = 15,
-                               fragmentLookupRange = LookupRange(5, 5),
-                             ),
-                             chatModel = context.chatModel,
-                             embeddingsModel = context.embeddingsModel,
-                           ),
-                         )
-                         .start // fire and forget
-            res     <-
+            _   <- chatService
+                     .processQuery(
+                       ChatService.Input(
+                         contextId = context.id,
+                         query = query,
+                         queryId = queryId,
+                         promptTemplate = context.promptTemplate,
+                         retrieveOptions = RetrieveOptions(
+                           topK = 15,
+                           fragmentLookupRange = LookupRange(5, 5),
+                         ),
+                         chatModel = context.chatModel,
+                         embeddingsModel = context.embeddingsModel,
+                       ),
+                     )
+                     .start // fire and forget
+            res <-
               Ok(
                 ChatView.responseMessage(
                   query = query,
@@ -166,12 +165,13 @@ final class ContextController(using
 
       case req @ DELETE -> Root / ContextIdVar(contextId) / "documents" / DocumentIdVar(documentId) =>
         getContextOrNotFound(contextId): context =>
-          // TODO: validate if the document belongs to the context
           for
-            _        <- documentRepository.delete(documentId)
-            _        <- info"Deleted document: $documentId"
+            _        <- ingestionService.purge(contextId, documentId)
             response <- Ok()
           yield response
+
+      case req @ DELETE -> Root / ContextIdVar(contextId) =>
+        purgeContext(contextId) *> Ok()
 
   private def getContextOrNotFound(contextId: ContextId)(fn: ContextInfo => IO[Response[IO]]): IO[Response[IO]] =
     contextRepository
@@ -179,6 +179,15 @@ final class ContextController(using
       .flatMap:
         case Some(context) => fn(context)
         case None          => NotFound()
+
+  private def purgeContext(contextId: ContextId): IO[Unit] =
+    for
+      documents <- documentRepository.getAll(contextId)
+      _         <- warn"Purging context: $contextId with all of its ${documents.length} documents (!)"
+      _         <- documents.parTraverse: doc =>
+                     ingestionService.purge(contextId, doc.id)
+      _         <- contextRepository.delete(contextId)
+    yield ()
 
 object ContextController:
   def of()(using

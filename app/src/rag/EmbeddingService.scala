@@ -10,9 +10,9 @@ import sttp.capabilities.fs2.*
 import sttp.model.Uri.*
 import sttp.openai.OpenAI
 import sttp.openai.streaming.fs2.*
-import smile.nlp.*
 import sttp.openai.requests.embeddings.EmbeddingsRequestBody.*
 import sttp.openai.requests.embeddings.EmbeddingsResponseBody.*
+import scala.concurrent.duration.*
 
 trait EmbeddingService[F[_]]:
   def createIndexEmbeddings(document: Document.Ingested, model: Model): F[Vector[Embedding.Index]]
@@ -59,6 +59,7 @@ final class SttpOpenAIEmbeddingService(using backend: SttpBackend, openAIProtoco
           model = EmbeddingsModel.CustomEmbeddingsModel(model.name),
         ),
       )
+      .readTimeout(5.minutes)
       .send(backend)
       .map(_.body)
       .rethrow

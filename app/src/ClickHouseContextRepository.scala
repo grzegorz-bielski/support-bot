@@ -18,6 +18,12 @@ import supportbot.clickhouse.*
 
 import ClickHouseContextRepository.*
 
+trait ContextRepository[F[_]]:
+  def createOrUpdate(info: ContextInfo): F[Unit]
+  def getAll: F[Vector[ContextInfo]]
+  def get(contextId: ContextId): F[Option[ContextInfo]]
+  def delete(id: ContextId): F[Unit]
+
 final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logger[IO]) extends ContextRepository[IO]:
   def get(id: ContextId): IO[Option[ContextInfo]] =
     client
@@ -37,7 +43,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
         LIMIT 1
         FORMAT JSONEachRow
         """
-      .evalMap: row => 
+      .evalMap: row =>
         IO.fromEither(row.asContextInfo)
       .compile
       .last
@@ -59,7 +65,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
         LIMIT 1 BY id
         FORMAT JSONEachRow
         """
-      .evalMap: row => 
+      .evalMap: row =>
         IO.fromEither(row.asContextInfo)
       .compile
       .toVector
@@ -88,7 +94,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
       )
       """
       // TODO: do not stringify the values, encode to String, or use new JSON type
-  override def delete(id: ContextId): IO[Unit] =
+  override def delete(id: ContextId): IO[Unit]             =
     client.executeQuery:
       i"""DELETE FROM contexts WHERE id = toUUID('$id')"""
 

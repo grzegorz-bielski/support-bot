@@ -7,11 +7,12 @@ import fs2.Stream
 trait VectorStoreRepository[F[_]]:
   def store(index: Vector[Embedding.Index]): F[Unit]
   def retrieve(query: Embedding.Query, options: RetrieveOptions): Stream[F, Embedding.Retrieved]
-  def documentEmbeddingsExists(documentId: DocumentId): F[Boolean]
+  def delete(contextId: ContextId, documentId: DocumentId): F[Unit]
+  def documentEmbeddingsExists(contextId: ContextId, documentId: DocumentId): F[Boolean]
 
 final case class RetrieveOptions(
   topK: Int,
-  fragmentLookupRange: LookupRange
+  fragmentLookupRange: LookupRange,
 )
 
 final case class LookupRange(lookBack: Int, lookAhead: Int)

@@ -7,6 +7,13 @@ import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.*
 import unindent.*
 
+opaque type ContextId = UUID
+object ContextId:
+  inline def apply(uuid: UUID): ContextId = uuid
+  def of: IO[ContextId]                   = IO.randomUUID
+
+  given JsonValueCodec[ContextId] = JsonCodecMaker.make
+
 /** A prompt template.
   *
   * Based on
@@ -14,15 +21,15 @@ import unindent.*
   */
 enum PromptTemplate derives ConfiguredJsonValueCodec:
   case Structured(
-    taskContext: Option[String] = None,          // system
-    toneContext: Option[String] = None,          // system
-    taskDescription: Option[String] = None,      // system
-    examples: Vector[PromptTemplate.Example] = Vector.empty,    // user & assistant back and forth
-    queryTemplate: String,                       // user template, aka immediateTask, user
-    queryContextTemplate: Option[String] = None, // user template
-    precognition: Option[String] = None,         // user
-    outputFormatting: Option[String] = None,     // user
-    prefill: Option[String] = None,              // assistant
+    taskContext: Option[String] = None,                      // system
+    toneContext: Option[String] = None,                      // system
+    taskDescription: Option[String] = None,                  // system
+    examples: Vector[PromptTemplate.Example] = Vector.empty, // user & assistant back and forth
+    queryTemplate: String,                                   // user template, aka immediateTask, user
+    queryContextTemplate: Option[String] = None,             // user template
+    precognition: Option[String] = None,                     // user
+    outputFormatting: Option[String] = None,                 // user
+    prefill: Option[String] = None,                          // assistant
   )
 
 final case class RenderedPrompt(
@@ -57,7 +64,7 @@ final case class Prompt(
   template: PromptTemplate,
 ) derives ConfiguredJsonValueCodec:
   import PromptTemplate.*
-  
+
   def render: RenderedPrompt =
     template match
       case tmpl: PromptTemplate.Structured =>

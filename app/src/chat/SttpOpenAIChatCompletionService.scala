@@ -12,6 +12,7 @@ import sttp.openai.streaming.fs2.*
 import sttp.openai.OpenAIExceptions.OpenAIException
 import sttp.openai.requests.completions.chat.ChatRequestBody.{ChatBody, ChatCompletionModel}
 import sttp.openai.requests.completions.chat.message.*
+import scala.concurrent.duration.*
 
 final class SttpOpenAIChatCompletionService(using
   backend: WebSocketStreamBackend[IO, Fs2Streams[IO]],
@@ -26,6 +27,7 @@ final class SttpOpenAIChatCompletionService(using
       .eval:
         openAIProtocol
           .createStreamedChatCompletion[IO](createChatBody(prompt, model))
+          .readTimeout(5.minutes)
           .send(backend)
           .map(_.body)
           .rethrow

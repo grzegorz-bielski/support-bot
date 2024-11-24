@@ -1,8 +1,6 @@
 package supportbot
 package rag
 
-import supportbot.context.*
-
 object Document:
   final case class Ingested(
     info: Info,

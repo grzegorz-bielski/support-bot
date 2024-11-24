@@ -13,8 +13,11 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
   def retrieve(query: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
     Stream.eval(ref.get).flatMap(KNN.retrieve(_, query, options.topK))
 
-  def documentEmbeddingsExists(documentId: DocumentId): IO[Boolean] =
+  def documentEmbeddingsExists(contextId: ContextId, documentId: DocumentId): IO[Boolean] =
     ref.get.map(_.exists(_.documentId == documentId))
+
+  def delete(contextId: ContextId, documentId: DocumentId): IO[Unit] =
+    ref.update(_.filterNot(_.documentId == documentId))
 
   private object KNN:
     def retrieve(

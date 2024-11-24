@@ -12,6 +12,8 @@ import supportbot.rag.vectorstore.*
 
 trait IngestionService[F[_]]:
   def ingest(input: IngestionService.Input): F[Document.Ingested]
+  def purge(contextId: ContextId, documentId: DocumentId): F[Unit]
+
 object IngestionService:
   final case class Input(
     contextId: ContextId,
@@ -26,14 +28,19 @@ final class ClickHouseIngestionService(using
   vectorStoreRepository: VectorStoreRepository[IO],
   logger: Logger[IO],
 ) extends IngestionService[IO]:
+  def purge(contextId: ContextId, documentId: DocumentId): IO[Unit] =
+    for
+      _ <- vectorStoreRepository.delete(contextId, documentId)
+      _ <- documentRepository.delete(documentId)
+      _ <- info"Deleted document: $documentId and all its embeddings."
+    yield ()
+
   def ingest(input: IngestionService.Input): IO[Document.Ingested] =
     import input.*
 
     // TODO: this has a lot of moving pieces, maybe it can be done in more atomic way?
-
     for
-      documentId <- DocumentId.of
-
+      documentId      <- DocumentId.of
       documentVersion <- getDocumentVersion(documentId, contextId, documentName)
 
       documentFragments <- LangChain4jIngestion.loadFrom(content, maxTokens = embeddingsModel.contextLength)
@@ -45,7 +52,7 @@ final class ClickHouseIngestionService(using
                        name = documentName,
                        description = "",
                        version = documentVersion,
-                       `type` = "PDF", // TODO: infer from content
+                       `type` = "PDF", // TODO: infer from content...
                        metadata = Map.empty,
                      )
       document     = Document.Ingested(
@@ -53,14 +60,15 @@ final class ClickHouseIngestionService(using
                        fragments = documentFragments,
                      )
 
-      _ <- documentRepository.createOrUpdate(document.info)
-      _ <- info"Document $documentId metadata persisted."
-
+      _               <- info"Creating embeddings for document: $documentId."
       indexEmbeddings <- embeddingsService.createIndexEmbeddings(document, model = embeddingsModel)
       _               <- info"Document $documentId: created ${indexEmbeddings.size} embeddings."
 
       _ <- vectorStoreRepository.store(indexEmbeddings)
       _ <- info"Document $documentId: embeddings persisted."
+
+      _ <- documentRepository.createOrUpdate(document.info)
+      _ <- info"Document $documentId metadata persisted."
     yield document
 
   private def getDocumentVersion(
@@ -74,7 +82,7 @@ final class ClickHouseIngestionService(using
       _                               <-
         val logContent = maybeDocumentWithSameName
           .map(_.id)
-          .fold("name is unique")(id => s"doc $id has the same name, increased version number: $documentVersion")
+          .fold("name is unique")(id => s"document $id has the same name, increased version number: $documentVersion")
 
         info"Document $documentId: $logContent."
     yield documentVersion

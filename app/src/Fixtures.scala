@@ -11,7 +11,6 @@ import supportbot.rag.*
 import supportbot.rag.ingestion.*
 import supportbot.rag.vectorstore.*
 import supportbot.clickhouse.*
-import supportbot.context.*
 
 // dev only test data
 object Fixtures:
@@ -46,7 +45,7 @@ object Fixtures:
     val embeddingsModel = Model.SnowflakeArcticEmbed
 
     vectorStore
-      .documentEmbeddingsExists(documentId)
+      .documentEmbeddingsExists(contextId, documentId)
       .ifM(
         IO.println(s"Embeddings for document $documentId already exists. Skipping chunking and indexing."),
         for
