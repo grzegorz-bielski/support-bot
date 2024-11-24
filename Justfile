@@ -4,7 +4,7 @@ app-dev:
     export ENV=Local
     (
         trap 'kill 0' SIGINT; 
-        scala-cli run . --restart & 
+        scala-cli run . --restart --main-class supportbot.SupportBot & 
         npm run tailwind:watch --workspace app &
         npm run esbuild:watch --workspace app
     )
@@ -20,3 +20,6 @@ test:
     echo "Running tests"
     export ENV=Test
     scala-cli test .
+
+inference-bb engine model:
+    scala-cli run . --main-class supportbot.bench.InferenceBB -- {{engine}} {{model}}
