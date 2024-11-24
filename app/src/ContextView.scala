@@ -20,7 +20,7 @@ object ContextView extends HtmxView:
     uploadUrl: String,
     documents: Vector[Document.Info],
     fileFieldName: String,
-    documentDeleteUrl: DocumentDeleteUrl
+    documentDeleteUrl: DocumentDeleteUrl,
   )(using AppConfig) = RootLayoutView.view(
     div(
       cls := "grid grid-cols-1 md:grid-cols-5 gap-x-16",
@@ -48,10 +48,11 @@ object ContextView extends HtmxView:
   def contextsOverview(contexts: Vector[ContextInfo])(using AppConfig) =
     RootLayoutView.view(
       div(
+        cls := "mx-auto max-w-3xl",
         div(
-          cls := "flex justify-between items-center",
+          cls := "flex justify-between items-center bg-base-200 p-5 rounded-box my-4 md:my-8",
           h2(
-            cls := "text-2xl p-5",
+            cls := "text-2xl",
             "Your contexts",
           ),
           div(
@@ -64,19 +65,45 @@ object ContextView extends HtmxView:
         ),
         div(
           ul(
-            cls := "grid grid-cols-1 md:grid-cols-3 gap-4",
+            cls := "grid grid-cols-1 md:grid-cols-2 gap-6 auto-rows-fr justify-between",
             contexts.map: context =>
               li(
-                appLink(
-                  s"/contexts/${context.id}",
+                cls := "block",
+                div(
+                  cls := "card h-full bg-base-100 shadow-lg shadow-xl transition-shadow",
                   div(
-                    cls := "card bg-base-200 shadow-lg shadow-lg hover:shadow-xl transition-shadow",
+                    cls := "card-body",
+                    h2(cls := "card-title", context.name),
+                    p(context.description),
                     div(
-                      cls := "card-body",
-                      h2(cls := "card-title", context.name),
-                      p(context.description),
+                      cls  := "join mr-0 ml-auto",
+                      appLink(
+                        path = s"/contexts/${context.id}",
+                        child = "Edit",
+                        attrs = cls := "btn rounded-btn join-item",
+                      ),
+                      div(
+                        cls := "dropdown dropdown-end",
+                        div(
+                          tabindex := "0",
+                          role     := "button",
+                          cls      := "btn join-item rounded-btn",
+                          arrowDownIcon(),
+                        ),
+                        ul(
+                          tabindex := "0",
+                          cls      := "menu dropdown-content bg-base-100 rounded-box z-[1] mt-1 w-52 p-2 shadow",
+                          li(
+                            a("Item 1"),
+                          ),
+                          li(
+                            a("Item 2"),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
+                  // ),
                 ),
               ),
           ),
@@ -90,26 +117,34 @@ object ContextView extends HtmxView:
     documents: Vector[Document.Info],
     fileFieldName: String,
     contextInfo: ContextInfo,
-    documentDeleteUrl: DocumentDeleteUrl
+    documentDeleteUrl: DocumentDeleteUrl,
   ) =
     div(
       role := "tablist",
       cls  := "tabs tabs-bordered",
       tab(
         "Knowledge Base",
-        knowledgeBase(uploadUrl = uploadUrl, documents = documents, fileFieldName = fileFieldName, documentDeleteUrl = documentDeleteUrl),
+        knowledgeBase(
+          uploadUrl = uploadUrl,
+          documents = documents,
+          fileFieldName = fileFieldName,
+          documentDeleteUrl = documentDeleteUrl,
+        ),
         checked = true,
       ),
       tab("Context Settings", contextSettings(contextInfo = contextInfo, contextUpdateUrl = contextUpdateUrl)),
     )
 
   private def tab(name: String, content: Modifier, checked: Boolean = false) =
+    val inactiveBackground = "bg-base-100" // bg-transparent
+    val activeBackground   = "bg-base-100" // bg-transparent
+
     Seq(
       input(
         `type`             := "radio",
         attr("name")       := "my_tabs_1",
         role               := "tab",
-        cls                := 
+        cls                :=
           Vector(
             "tab",
             "min-w-36",
@@ -124,14 +159,14 @@ object ContextView extends HtmxView:
             "checked:hover:border-current",
             "checked:focus:border-current",
           )
-          .mkString(" "),
+            .mkString(" "),
         attr("aria-label") := name,
         Option.when(checked)(attr("checked") := "checked"),
       ),
       div(
-        role             := "tabpanel", 
-        cls := "tab-content bg-base-100 pt-2 md:pt-6", 
-        content
+        role               := "tabpanel",
+        cls                := "tab-content bg-base-100 pt-2 md:pt-6",
+        content,
       ),
     )
 
@@ -244,17 +279,17 @@ object ContextView extends HtmxView:
     val documentFileId = s"file-${document.id}"
 
     li(
-      id := documentFileId,
-      cls := "group rounded-r-box hover:bg-base-300 focus-within:bg-base-300 outline-none", 
+      id  := documentFileId,
+      cls := "group rounded-r-box hover:bg-base-300 focus-within:bg-base-300 outline-none",
       div(
         cls := "min-h-8 py-2 px-3 text-xs flex gap-3 items-center",
         span(documentIcon()),
-        span(cls                   := "text-wrap break-all", s"${document.name} - v${document.version}"),
+        span(cls      := "text-wrap break-all", s"${document.name} - v${document.version}"),
         button(
           `hx-delete` := documentDeleteUrl(document),
           `hx-target` := s"#$documentFileId",
           `hx-swap`   := "outerHTML",
-          cls := "btn btn-xs btn-ghost btn-square opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 mr-0 ml-auto transition-none",
+          cls         := "btn btn-xs btn-ghost btn-square opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 mr-0 ml-auto transition-none",
           "✕",
         ),
       ),
@@ -273,7 +308,7 @@ object ContextView extends HtmxView:
     uploadUrl: String,
     fileFieldName: String,
     documents: Vector[Document.Info],
-    documentDeleteUrl: DocumentDeleteUrl
+    documentDeleteUrl: DocumentDeleteUrl,
   ) =
 
     val files =
@@ -314,8 +349,8 @@ object ContextView extends HtmxView:
             ),
             files,
             div(
-              cls := "p-2",
-              uploadFilesButton
+              cls := "p-5",
+              uploadFilesButton,
             ),
           ),
         ),
@@ -425,12 +460,30 @@ object ContextView extends HtmxView:
       ),
     )
 
+  private def arrowDownIcon() =
+    import scalatags.Text.svgTags.{attr as _, *}
+    import scalatags.Text.svgAttrs.*
+
+    svg(
+      xmlns   := "http://www.w3.org/2000/svg",
+      viewBox := "0 0 24 24",
+      cls     := "h-8 w-8",
+      path(
+        d                       := "M7 10l5 5 5-5",
+        fill                    := "none",
+        stroke                  := "currentColor",
+        attr("stroke-width")    := "2",
+        attr("stroke-linecap")  := "round",
+        attr("stroke-linejoin") := "round",
+      ),
+    )
+
   private def folderIcon() =
     import scalatags.Text.svgTags.{attr as _, *}
     import scalatags.Text.svgAttrs.*
 
     svg(
-      cls :="inline",
+      cls                  := "inline",
       xmlns                := "http://www.w3.org/2000/svg",
       fill                 := "none",
       viewBox              := "0 0 24 24",

@@ -9,7 +9,7 @@ object ChatView extends HtmxView:
 
   def view(chatPostUrl: String) = 
     div(
-        cls := "rounded-box pl-2 md:col-span-2 md:bg-base-200",
+        cls := "rounded-box pl-5 md:col-span-2 border border-bg-base-200 shadow-xl",
         // div(cls := "divider", aria.hidden := true, "workbench"),
         messages(),
         chatForm(postUrl = chatPostUrl),
@@ -19,14 +19,14 @@ object ChatView extends HtmxView:
     postUrl: String,
   ) =
     form(
-      cls := "mr-2 pb-2",
+      cls := "mr-5 pb-5",
       `hx-post`   := postUrl,
       `hx-target` := s"#$messagesViewId",
       `hx-swap`   := "beforeend scroll:bottom",
     )(
       div(
         input(
-          cls         := "input input-bordered w-full p-2",
+          cls         := "input input-bordered w-full p-5",
           `type`      := "text",
           name        := "content",
           placeholder := "Type a query to the chatbot",
@@ -76,7 +76,7 @@ object ChatView extends HtmxView:
 
   def messages() =
     div(
-      cls := "py-2 md:h-[calc(100dvh-12rem)] md:overflow-y-scroll",
+      cls := "py-5 pr-5 md:h-[calc(100dvh-12rem)] md:overflow-y-scroll",
       id := messagesViewId,
     )(
       div(
