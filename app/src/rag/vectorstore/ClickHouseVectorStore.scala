@@ -81,7 +81,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
       .flatMap: value =>
         info"Document $documentId embedding exists: $value".as(value)
 
-  def retrieve(embedding: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
+  def retrieve(embedding: Embedding.Query, settings: RetrievalSettings): Stream[IO, Embedding.Retrieved] =
     client
       .streamQueryJson[ClickHouseRetrievedRow]:
         i"""
@@ -98,7 +98,7 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
               FROM embeddings
               WHERE context_id = toUUID('${embedding.contextId}')
               ORDER BY score ASC
-              LIMIT ${options.topK}
+              LIMIT ${settings.topK}
             ) 
             LIMIT 1 BY document_id, matched_fragment_index
           )
@@ -119,8 +119,8 @@ final class ClickHouseVectorStore(client: ClickHouseClient[IO])(using Logger[IO]
             ae.document_id = e.document_id
           WHERE
             fragment_index BETWEEN 
-            matched_fragment_index - ${options.fragmentLookupRange.lookBack} AND 
-            matched_fragment_index + ${options.fragmentLookupRange.lookAhead}
+            matched_fragment_index - ${settings.fragmentLookupRange.lookBack} AND 
+            matched_fragment_index + ${settings.fragmentLookupRange.lookAhead}
           ORDER BY toUInt128(document_id), fragment_index, chunk_index
           LIMIT 1 BY document_id, fragment_index
           FORMAT JSONEachRow

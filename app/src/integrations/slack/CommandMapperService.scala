@@ -24,7 +24,7 @@ object SlackCommandMapperService:
                     // chatService.ask(
                     //     ???
                     //     //   ChatService.Input(
-                    //     //      contextId = context.id, // from the user query
+                    //     //      contextId = context.id, // from the user query, somehow... do we need an alias?
                     //     //      query = query, // from the user query
                     //     //      queryId = queryId, // dynamic
                     //     //      promptTemplate = context.promptTemplate, // from the retrieved context

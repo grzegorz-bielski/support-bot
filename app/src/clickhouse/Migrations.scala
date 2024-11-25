@@ -12,13 +12,20 @@ lazy val AllMigrations = Vector(
                 id UUID,                            -- unique identifier of the context
                 name String,                        -- name of the context
                 description String,                 -- description of the context
-                prompt_template String,             -- a stringified JSON of the prompt template, TODO: move the new JSON type once it's available?
+                prompt_template String,             -- a stringified JSON of the prompt template
+                retrieval_settings String,          -- a stringified JSON of the retrieval settings
                 chat_model String,                  -- name of the chat model
                 embeddings_model String,            -- name of the embeddings model
-                updated_at DateTime DEFAULT now()
+                updated_at DateTime DEFAULT now(),
+
+                -- this essentially doubles the size of the table, but allows for faster filtering by name (there are no row indexes in CH)
+                -- we don't expect the number of contexts to be huge, so it should be fine, but perhaps a bloom filter data skipping index would work too
+                PROJECTION context_name_projection (SELECT * ORDER BY name)
             )
             ENGINE = ReplacingMergeTree()
             ORDER BY (toUInt128(id))
+            SETTINGS
+              deduplicate_merge_projection_mode = 'drop'
             """,
   ),
   Migration(
@@ -53,8 +60,8 @@ lazy val AllMigrations = Vector(
                 metadata Map(String, String),                                              -- any additional metadata of the chunk
                 embedding Array(Float32),                                                  -- embedding vector of the chunk
                 updated_at DateTime DEFAULT now(),
-                INDEX ann_idx embedding TYPE vector_similarity('hnsw', 'cosineDistance'),  -- ANN index for fast retrieval of embeddings similar according to cosine distance
-                INDEX inv_idx value TYPE full_text()
+                INDEX ann_idx embedding TYPE vector_similarity('hnsw', 'cosineDistance'),  -- ANN index for fast retrieval of embeddings according to the cosine distance
+                INDEX inv_idx value TYPE full_text()                                       -- inverted index for full-text search
             )
             ENGINE = MergeTree()                                           -- not replacing, as we want to keep all embeddings for a given fragment_index
             ORDER BY (toUInt128(context_id), toUInt128(document_id), fragment_index, chunk_index) -- CH's UUIDs are sorted by their second half, so we need to convert them to UInt128 for proper ordering

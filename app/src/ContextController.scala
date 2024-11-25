@@ -20,9 +20,9 @@ import scala.concurrent.duration.{span as _, *}
 import java.util.UUID
 
 import supportbot.chat.*
-import supportbot.rag.vectorstore.{VectorStoreRepository, RetrieveOptions, LookupRange}
+import supportbot.rag.vectorstore.*
 import supportbot.rag.*
-import supportbot.rag.ingestion.IngestionService
+import supportbot.rag.ingestion.*
 
 final class ContextController(using
   logger: Logger[IO],
@@ -119,10 +119,7 @@ final class ContextController(using
                          query = query,
                          queryId = queryId,
                          promptTemplate = context.promptTemplate,
-                         retrieveOptions = RetrieveOptions(
-                           topK = 15,
-                           fragmentLookupRange = LookupRange(5, 5),
-                         ),
+                         retrievalSettings = context.retrievalSettings,
                          chatModel = context.chatModel,
                          embeddingsModel = context.embeddingsModel,
                        ),

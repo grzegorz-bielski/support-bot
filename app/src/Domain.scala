@@ -84,3 +84,16 @@ final case class Prompt(
           ).map(_.getOrElse("")).mkString("\n"),
           assistant = tmpl.prefill,
         )
+
+final case class RetrievalSettings(
+  topK: Int,
+  fragmentLookupRange: RetrievalSettings.LookupRange,
+) derives ConfiguredJsonValueCodec
+
+object RetrievalSettings:
+  lazy val default = RetrievalSettings(
+    topK = 15,
+    fragmentLookupRange = LookupRange(lookBack = 5, lookAhead = 5),
+  )
+
+  final case class LookupRange(lookBack: Int, lookAhead: Int)

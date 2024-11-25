@@ -1,4 +1,3 @@
-
 package supportbot
 
 import cats.syntax.all.*
@@ -41,8 +40,6 @@ object Fixtures:
     val documentId      = DocumentId(UUID.fromString("f47b3b3e-0b3b-4b3b-8b3b-3b3b3b3b3b3b"))
     val documentName    = DocumentName(path.fileName.toString)
     val documentVersion = DocumentVersion(1)
-    val chatModel       = Model.Llama31
-    val embeddingsModel = Model.SnowflakeArcticEmbed
 
     vectorStore
       .documentEmbeddingsExists(contextId, documentId)
@@ -52,13 +49,10 @@ object Fixtures:
           _ <- IO.println("(Re)creating context and document")
 
           _ <- contextRepository.createOrUpdate(
-                 ContextInfo(
+                 ContextInfo.default(
                    id = contextId,
-                   name = "Support",
-                   description = "Support context",
-                   promptTemplate = PromptTemplate.default,
-                   chatModel = chatModel,
-                   embeddingsModel = embeddingsModel,
+                   name = "Fixture bot",
+                   description = "Support bot fixture context",
                  ),
                )
 
@@ -67,7 +61,7 @@ object Fixtures:
                           IngestionService.Input(
                             contextId = contextId,
                             documentName = documentName,
-                            embeddingsModel = embeddingsModel,
+                            embeddingsModel = Model.defaultEmbeddingsModel,
                             content = fileContent,
                           ),
                         )

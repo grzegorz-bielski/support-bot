@@ -10,8 +10,8 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
   def store(index: Vector[Embedding.Index]): IO[Unit] =
     ref.update(_ ++ index).void
 
-  def retrieve(query: Embedding.Query, options: RetrieveOptions): Stream[IO, Embedding.Retrieved] =
-    Stream.eval(ref.get).flatMap(KNN.retrieve(_, query, options.topK))
+  def retrieve(query: Embedding.Query, settings: RetrievalSettings): Stream[IO, Embedding.Retrieved] =
+    Stream.eval(ref.get).flatMap(KNN.retrieve(_, query, settings))
 
   def documentEmbeddingsExists(contextId: ContextId, documentId: DocumentId): IO[Boolean] =
     ref.get.map(_.exists(_.documentId == documentId))
@@ -23,18 +23,19 @@ final class InMemoryVectorStore(ref: Ref[IO, Vector[Embedding.Index]]) extends V
     def retrieve(
       index: Vector[Embedding.Index], // assuming this comes from all the documents
       query: Embedding.Query,         // to be classified
-      topK: Int,
+      settings: RetrievalSettings,
     ): Stream[IO, Embedding.Retrieved] =
       Stream.emits:
         for
           (neighbor, score)  <- findKNearestNeighbors(
                                   data = index.map(embedding => (embedding.value.map(_.toDouble), embedding)),
                                   input = query.value.map(_.toDouble),
-                                  k = topK,
+                                  k = settings.topK,
                                 )
           // neighbor lookup window, like +/- 1 page
           fragmentsIndexRange =
-            neighbor.fragmentIndex - 1 to neighbor.fragmentIndex + 1
+            neighbor.fragmentIndex - settings.fragmentLookupRange.lookBack to
+              neighbor.fragmentIndex + settings.fragmentLookupRange.lookAhead
           // full scan...
           neighboringChunk   <- index.collect:
                                   case embedding: Embedding.Index

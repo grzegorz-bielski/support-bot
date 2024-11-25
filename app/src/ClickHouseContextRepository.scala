@@ -22,22 +22,29 @@ trait ContextRepository[F[_]]:
   def createOrUpdate(info: ContextInfo): F[Unit]
   def getAll: F[Vector[ContextInfo]]
   def get(contextId: ContextId): F[Option[ContextInfo]]
+  def getByName(name: String): F[Vector[ContextInfo]]
   def delete(id: ContextId): F[Unit]
 
 final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logger[IO]) extends ContextRepository[IO]:
+  private lazy val selectContextFragment =
+    i"""
+    SELECT 
+      id, 
+      name, 
+      description, 
+      prompt_template,
+      retrieval_settings,
+      chat_model,
+      embeddings_model,
+      updated_at
+    FROM contexts
+    """
+
   def get(id: ContextId): IO[Option[ContextInfo]] =
     client
       .streamQueryJson[ContextInfoRetrievedRow]:
         i"""
-        SELECT 
-          id, 
-          name, 
-          description, 
-          prompt_template, 
-          chat_model, 
-          embeddings_model,
-          updated_at
-        FROM contexts 
+        $selectContextFragment 
         WHERE id = toUUID('$id')
         ORDER BY updated_at DESC
         LIMIT 1
@@ -48,19 +55,28 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
       .compile
       .last
 
+  // leverages the `context_name_projection`
+  // `name` is not unique (!)
+  def getByName(name: String): IO[Vector[ContextInfo]] =
+    client
+      .streamQueryJson[ContextInfoRetrievedRow]:
+        i"""
+        $selectContextFragment
+        WHERE name = $name
+        ORDER BY id, updated_at DESC
+        LIMIT 1 BY id
+        FORMAT JSONEachRow
+        """
+      .evalMap: row =>
+        IO.fromEither(row.asContextInfo)
+      .compile
+      .toVector
+
   def getAll: IO[Vector[ContextInfo]] =
     client
       .streamQueryJson[ContextInfoRetrievedRow]:
         i"""
-        SELECT 
-          id, 
-          name, 
-          description, 
-          prompt_template, 
-          chat_model, 
-          embeddings_model,
-          updated_at
-        FROM contexts
+        $selectContextFragment
         ORDER BY toUInt128(id), updated_at DESC
         LIMIT 1 BY id
         FORMAT JSONEachRow
@@ -81,6 +97,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
         name, 
         description, 
         prompt_template,
+        retrieval_settings,
         chat_model,
         embeddings_model
       ) 
@@ -89,6 +106,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
         ${info.name.toClickHouseString},
         ${info.description.toClickHouseString}, 
         ${writeToString(info.promptTemplate, writerConfig).toClickHouseString},
+        ${writeToString(info.retrievalSettings, writerConfig).toClickHouseString},
         ${writeToString(info.chatModel, writerConfig).toClickHouseString},
         ${writeToString(info.embeddingsModel, writerConfig).toClickHouseString}
       )
@@ -108,6 +126,7 @@ object ClickHouseContextRepository:
     name: String,
     description: String,
     prompt_template: String,
+    retrieval_settings: String,
     chat_model: String,
     embeddings_model: String,
   ) derives ConfiguredJsonValueCodec:
@@ -118,6 +137,7 @@ object ClickHouseContextRepository:
           name = name,
           description = description,
           promptTemplate = readFromString[PromptTemplate](prompt_template),
+          retrievalSettings = readFromString[RetrievalSettings](retrieval_settings),
           chatModel = readFromString[Model](chat_model),
           embeddingsModel = readFromString[Model](embeddings_model),
         )

@@ -45,6 +45,8 @@ final class SttpOpenAIChatCompletionService(using
       n = choicesAmount.some,
       tools = Some(
         Seq(
+          // NOTE: ollama doesn't support tools with streaming: https://github.com/ollama/ollama/issues/5796
+
           // Tool.FunctionTool(
           //   description = "This tool will return the sum of two numbers",
           //   name = "sum",

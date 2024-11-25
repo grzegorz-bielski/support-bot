@@ -8,6 +8,7 @@ import scalatags.Text.tags2.{progress, details, summary}
 
 import supportbot.chat.*
 import supportbot.rag.*
+import supportbot.viewpartials.*
 
 object ContextView extends HtmxView:
   private val uploadedFilesListId = "uploaded-files-list"
@@ -45,7 +46,9 @@ object ContextView extends HtmxView:
       docs.map(ingested => documentItem(documentDeleteUrl)(ingested.info)),
     )
 
-  def contextsOverview(contexts: Vector[ContextInfo], createNewUrl: String, contextUrl: ContextId => String)(using AppConfig) =
+  def contextsOverview(contexts: Vector[ContextInfo], createNewUrl: String, contextUrl: ContextId => String)(using
+    AppConfig,
+  ) =
     RootLayoutView.view(
       div(
         cls := "mx-auto",
@@ -77,7 +80,7 @@ object ContextView extends HtmxView:
 
     li(
       cls := "block",
-      id := contextCardId,
+      id  := contextCardId,
       div(
         cls := "card h-full bg-base-100 shadow-lg shadow-xl transition-shadow",
         div(
@@ -97,7 +100,7 @@ object ContextView extends HtmxView:
                 tabindex := "0",
                 role     := "button",
                 cls      := "btn btn-outline join-item rounded-btn",
-                arrowDownIcon(),
+                IconsView.arrowDownIcon(),
               ),
               ul(
                 tabindex := "0",
@@ -106,16 +109,16 @@ object ContextView extends HtmxView:
                   button(
                     cls := "join-item btn btn-disabled btn-sm w-full",
                     "Disable",
-                  )
+                  ),
                 ),
                 li(
                   button(
-                    cls := "join-item btn btn-sm btn-error w-full",
+                    cls         := "join-item btn btn-sm btn-error w-full",
                     `hx-delete` := contextUrl(context.id),
                     `hx-target` := s"#$contextCardId",
                     `hx-swap`   := "outerHTML",
                     "Delete",
-                  )
+                  ),
                 ),
               ),
             ),
@@ -188,6 +191,9 @@ object ContextView extends HtmxView:
     val promptTemplateJson =
       contextInfo.promptTemplate.asJson(indentStep = 2).combineAll
 
+    val retrievalSettingsJson =
+      contextInfo.retrievalSettings.asJson(indentStep = 2).combineAll
+
     div(
       form(
         `hx-post` := contextUpdateUrl,
@@ -209,6 +215,11 @@ object ContextView extends HtmxView:
           labelValue = "Prompt Template",
           fieldName = "promptTemplate",
           value = promptTemplateJson,
+        ),
+        formTextarea(
+          labelValue = "Retrieval Settings",
+          fieldName = "retrievalSettings",
+          value = retrievalSettingsJson,
         ),
         div(
           cls := "grid grid-cols-1 md:grid-cols-2 gap-2",
@@ -297,7 +308,7 @@ object ContextView extends HtmxView:
       cls := "group rounded-r-box hover:bg-base-300 focus-within:bg-base-300 outline-none mr-5",
       div(
         cls := "min-h-8 py-2 px-3 text-xs flex gap-3 items-center",
-        span(documentIcon()),
+        span(IconsView.documentIcon()),
         span(cls      := "text-wrap break-all", s"${document.name} - v${document.version}"),
         button(
           `hx-delete` := documentDeleteUrl(document),
@@ -335,7 +346,7 @@ object ContextView extends HtmxView:
         ),
       )
 
-    val Modal(uploadFilesButton, uploadFilesModalWindow) = modal(
+    val uploadFilesModal = ModalView.view(
       modalId = uploadModalId,
       buttonTitle = "Upload",
       modalTitle = "Upload your files",
@@ -364,50 +375,12 @@ object ContextView extends HtmxView:
             files,
             div(
               cls := "p-5",
-              uploadFilesButton,
+              uploadFilesModal.button,
             ),
           ),
         ),
       ),
-      uploadFilesModalWindow,
-    )
-
-  final case class Modal(
-    button: Modifier,
-    window: Modifier,
-  )
-
-  private def modal(
-    modalId: String,
-    buttonTitle: String,
-    modalTitle: String,
-    modalContent: Modifier,
-    buttonExtraClasses: Vector[String] = Vector.empty,
-  ): Modal =
-    Modal(
-      button = button(
-        cls     := "btn " ++ buttonExtraClasses.mkString(" "),
-        onclick := s"$modalId.showModal()",
-        buttonTitle,
-      ),
-      window = dialog(
-        id  := modalId,
-        cls := "modal modal-bottom sm:modal-middle",
-        div(
-          cls       := "modal-box",
-          form(
-            method := "dialog",
-            button(
-              cls        := "btn btn-sm btn-circle btn-ghost absolute right-2 top-2",
-              aria.label := "close",
-              "✕",
-            ),
-          ),
-          h3(cls   := "text-lg font-bold", modalTitle),
-          modalContent,
-        ),
-        form(method := "dialog", cls := "modal-backdrop", button("close")),
-      ),
+      uploadFilesModal.window,
     )
 
   // https://uploadcare.com/blog/how-to-make-a-drag-and-drop-file-uploader/
@@ -448,84 +421,4 @@ object ContextView extends HtmxView:
           "application/epub+zip",
           "application/x-mobipocket-ebook",
         ).mkString(","),
-    )
-
-  private def collapse(
-    collapseTitle: Modifier,
-    collapseContent: Modifier,
-    opened: Boolean = false,
-  ) =
-    val checkedAttr = Option.when(opened)(checked := true)
-
-    div(
-      cls := "collapse collapse-arrow border-base-300 bg-base-200 border",
-      input(
-        `type` := "checkbox",
-        cls    := "peer w-full",
-        checkedAttr,
-      ),
-      div(
-        cls    := "collapse-title text-xl font-medium",
-        collapseTitle,
-      ),
-      div(
-        cls    := "collapse-content",
-        collapseContent,
-      ),
-    )
-
-  private def arrowDownIcon() =
-    import scalatags.Text.svgTags.{attr as _, *}
-    import scalatags.Text.svgAttrs.*
-
-    svg(
-      xmlns   := "http://www.w3.org/2000/svg",
-      viewBox := "0 0 24 24",
-      cls     := "h-8 w-8",
-      path(
-        d                       := "M7 10l5 5 5-5",
-        fill                    := "none",
-        stroke                  := "currentColor",
-        attr("stroke-width")    := "2",
-        attr("stroke-linecap")  := "round",
-        attr("stroke-linejoin") := "round",
-      ),
-    )
-
-  private def folderIcon() =
-    import scalatags.Text.svgTags.{attr as _, *}
-    import scalatags.Text.svgAttrs.*
-
-    svg(
-      cls                  := "inline",
-      xmlns                := "http://www.w3.org/2000/svg",
-      fill                 := "none",
-      viewBox              := "0 0 24 24",
-      attr("stroke-width") := "1.5",
-      stroke               := "currentColor",
-      cls                  := "h-4 w-4",
-      path(
-        attr("stroke-linecap")  := "round",
-        attr("stroke-linejoin") := "round",
-        d                       := "M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z",
-      ),
-    )
-
-  private def documentIcon() =
-    import scalatags.Text.svgTags.{attr as _, *}
-    import scalatags.Text.svgAttrs.*
-
-    svg(
-      xmlns                := "http://www.w3.org/2000/svg",
-      aria.hidden          := true,
-      fill                 := "none",
-      viewBox              := "0 0 24 24",
-      attr("stroke-width") := "1.5",
-      stroke               := "currentColor",
-      cls                  := "h-4 w-4",
-      path(
-        attr("stroke-linecap")  := "round",
-        attr("stroke-linejoin") := "round",
-        d                       := "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z",
-      ),
     )

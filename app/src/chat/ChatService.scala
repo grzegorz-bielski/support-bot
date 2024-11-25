@@ -1,13 +1,15 @@
 package supportbot
 package chat
 
-import fs2.{Chunk as _, *}
+import fs2.{Chunk as _, io as _, *}
 import cats.effect.*
 import cats.syntax.all.*
 import org.typelevel.log4cats.*
 import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
 import scala.concurrent.duration.{span as _, *}
+import io.scalaland.chimney.dsl.*
+import io.scalaland.chimney.*
 import java.util.UUID
 import java.time.Duration
 
@@ -40,14 +42,14 @@ trait ChatService[F[_]]:
     *   The response content.
     */
   final def ask(input: ChatService.Input)(using Concurrent[F]): F[String] =
-  Concurrent[F]
-    .background(processQuery(input))
-    .use: _ =>
-      subscribeToQueryResponses(input.queryId)
-        .collectWhile:
-          case ChatService.Response.Partial(_, content) => content
-        .compile
-        .string
+    Concurrent[F]
+      .background(processQuery(input))
+      .use: _ =>
+        subscribeToQueryResponses(input.queryId)
+          .collectWhile:
+            case ChatService.Response.Partial(_, content) => content
+          .compile
+          .string
 
 object ChatService:
   final case class Input(
@@ -55,10 +57,19 @@ object ChatService:
     query: ChatQuery,
     queryId: QueryId,
     promptTemplate: PromptTemplate,
-    retrieveOptions: RetrieveOptions,
+    retrievalSettings: RetrievalSettings,
     chatModel: Model,
     embeddingsModel: Model,
   )
+
+  extension (info: ContextInfo)
+    def toChatInput(query: ChatQuery, queryId: QueryId): Input =
+      info
+        .into[Input]
+        .withFieldRenamed(_.id, _.contextId)
+        .withFieldConst(_.query, query)
+        .withFieldConst(_.queryId, queryId)
+        .transform
 
   trait WithQueryId:
     def queryId: QueryId
@@ -113,7 +124,7 @@ final class ChatServiceImpl(
                                chunk = Chunk(query.content, index = 0),
                                model = embeddingsModel,
                              )
-      retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings, retrieveOptions).compile.toVector
+      retrievedEmbeddings <- vectorStore.retrieve(queryEmbeddings, retrievalSettings).compile.toVector
 
       // _ <- info"Retrieved embeddings: $retrievedEmbeddings"
 

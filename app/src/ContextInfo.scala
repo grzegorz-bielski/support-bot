@@ -3,6 +3,7 @@ package supportbot
 import cats.effect.*
 import java.util.UUID
 import com.github.plokhotnyuk.jsoniter_scala.core.*
+import com.github.plokhotnyuk.jsoniter_scala.macros.*
 import cats.syntax.all.*
 import org.http4s.FormDataDecoder
 import org.http4s.FormDataDecoder.*
@@ -18,29 +19,35 @@ final case class ContextInfo(
   name: String,
   description: String,
   promptTemplate: PromptTemplate,
+  retrievalSettings: RetrievalSettings,
   chatModel: Model,
   embeddingsModel: Model,
 )
 
 object ContextInfo:
   def default: IO[ContextInfo] =
-    ContextId.of.map(default)
+    ContextId.of.map(default(_))
 
-  def default(id: ContextId): ContextInfo =
+  def default(
+    id: ContextId,
+    name: String = "Support bot",
+    description: String = "Your new blank support bot. Configure it to your needs.",
+  ): ContextInfo =
     ContextInfo(
       id = id,
-      name = "Support bot",
-      description = "Your new blank support bot. Configure it to your needs.",
+      name = name,
+      description = description,
       promptTemplate = PromptTemplate.default,
+      retrievalSettings = RetrievalSettings.default,
       chatModel = Model.defaultChatModel,
       embeddingsModel = Model.defaultEmbeddingsModel,
     )
-
 
 final case class ContextInfoFormDto(
   name: String,
   description: String,
   promptTemplate: String,
+  retrievalSettings: String,
   chatModel: Model,
   embeddingsModel: Model,
 ):
@@ -56,6 +63,9 @@ object ContextInfoFormDto:
   given PartialTransformer[String, PromptTemplate] =
     PartialTransformer.fromFunction(_.unsafeParseToJson[PromptTemplate])
 
+  given PartialTransformer[String, RetrievalSettings] =
+    PartialTransformer.fromFunction(_.unsafeParseToJson[RetrievalSettings])
+
   given QueryParamDecoder[Model] = QueryParamDecoder[String].emap: str =>
     Model.from(str).toRight(ParseFailure(str, "Invalid chat model"))
 
@@ -63,6 +73,7 @@ object ContextInfoFormDto:
     field[String]("name").sanitized,
     field[String]("description").sanitized,
     field[String]("promptTemplate").sanitized,
+    field[String]("retrievalSettings").sanitized,
     field[Model]("chatModel"),
     field[Model]("embeddingsModel"),
   ).mapN(ContextInfoFormDto.apply)
