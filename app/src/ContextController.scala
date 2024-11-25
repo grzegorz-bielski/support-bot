@@ -45,7 +45,14 @@ final class ContextController(using
       case GET -> Root =>
         for
           contexts <- contextRepository.getAll
-          response <- Ok(ContextView.contextsOverview(contexts))
+          response <- Ok(
+            ContextView
+              .contextsOverview(
+                contexts, 
+                createNewUrl = "/contexts/new",
+                contextUrl = id => s"/contexts/$id"
+              )
+          )
         yield response
 
       case GET -> Root / "new" =>
@@ -74,6 +81,9 @@ final class ContextController(using
                            ),
                          )
           yield response
+
+      case req @ DELETE -> Root / ContextIdVar(contextId) =>
+        purgeContext(contextId) *> Ok()
 
       case GET -> Root / ContextIdVar(contextId) / "chat" / "responses" :? QueryIdMatcher(queryId) =>
         getContextOrNotFound(contextId): context =>
@@ -169,9 +179,6 @@ final class ContextController(using
             _        <- ingestionService.purge(contextId, documentId)
             response <- Ok()
           yield response
-
-      case req @ DELETE -> Root / ContextIdVar(contextId) =>
-        purgeContext(contextId) *> Ok()
 
   private def getContextOrNotFound(contextId: ContextId)(fn: ContextInfo => IO[Response[IO]]): IO[Response[IO]] =
     contextRepository
