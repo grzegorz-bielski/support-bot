@@ -127,6 +127,8 @@ final class ContextController(using
                      .start // fire and forget
             res <-
               Ok(
+                // TODO: creating sse for each query is not efficient and error-prone
+                // we should have a single sse stream for each chat context workbench
                 ChatView.responseMessage(
                   query = query,
                   sseUrl = s"/$prefix/${context.id}/chat/responses?queryId=$queryId",

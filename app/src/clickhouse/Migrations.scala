@@ -14,6 +14,7 @@ lazy val AllMigrations = Vector(
                 description String,                 -- description of the context
                 prompt_template String,             -- a stringified JSON of the prompt template
                 retrieval_settings String,          -- a stringified JSON of the retrieval settings
+                chat_completion_settings String,    -- a stringified JSON of the chat completion settings 
                 chat_model String,                  -- name of the chat model
                 embeddings_model String,            -- name of the embeddings model
                 updated_at DateTime DEFAULT now(),

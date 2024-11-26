@@ -12,11 +12,14 @@ import unindent.*
 import java.util.UUID
 import java.time.*
 import io.scalaland.chimney.dsl.*
+import io.scalaland.chimney.*
 import scala.util.Try
+import scala.util.control.NoStackTrace
 
 import supportbot.clickhouse.*
 
 import ClickHouseContextRepository.*
+import ContextInfo.given
 
 trait ContextRepository[F[_]]:
   def createOrUpdate(info: ContextInfo): F[Unit]
@@ -34,6 +37,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
       description, 
       prompt_template,
       retrieval_settings,
+      chat_completion_settings,
       chat_model,
       embeddings_model,
       updated_at
@@ -98,6 +102,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
         description, 
         prompt_template,
         retrieval_settings,
+        chat_completion_settings,
         chat_model,
         embeddings_model
       ) 
@@ -107,6 +112,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
         ${info.description.toClickHouseString}, 
         ${writeToString(info.promptTemplate, writerConfig).toClickHouseString},
         ${writeToString(info.retrievalSettings, writerConfig).toClickHouseString},
+        ${writeToString(info.chatCompletionSettings, writerConfig).toClickHouseString},
         ${writeToString(info.chatModel, writerConfig).toClickHouseString},
         ${writeToString(info.embeddingsModel, writerConfig).toClickHouseString}
       )
@@ -121,24 +127,26 @@ object ClickHouseContextRepository:
     for given Logger[IO] <- Slf4jLogger.create[IO]
     yield ClickHouseContextRepository(client)
 
+  inline given CodecMakerConfig =
+    CodecMakerConfig.withFieldNameMapper(JsonCodecMaker.enforce_snake_case)
+
   private final case class ContextInfoRetrievedRow(
     id: ContextId,
     name: String,
     description: String,
-    prompt_template: String,
-    retrieval_settings: String,
-    chat_model: String,
-    embeddings_model: String,
+    promptTemplate: String,
+    retrievalSettings: String,
+    chatCompletionSettings: String,
+    chatModel: String,
+    embeddingsModel: String,
   ) derives ConfiguredJsonValueCodec:
     def asContextInfo: Either[Throwable, ContextInfo] =
-      Try:
-        ContextInfo(
-          id = id,
-          name = name,
-          description = description,
-          promptTemplate = readFromString[PromptTemplate](prompt_template),
-          retrievalSettings = readFromString[RetrievalSettings](retrieval_settings),
-          chatModel = readFromString[Model](chat_model),
-          embeddingsModel = readFromString[Model](embeddings_model),
-        )
-      .toEither
+      this
+        .intoPartial[ContextInfo]
+        .transform
+        .asEitherErrorPathMessageStrings
+        .leftMap: errors =>
+          ContextRetrievalError(errors.mkString(", "))
+
+  final class ContextRetrievalError(msg: String) extends NoStackTrace:
+    override def getMessage: String = msg

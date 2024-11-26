@@ -97,3 +97,42 @@ object RetrievalSettings:
   )
 
   final case class LookupRange(lookBack: Int, lookAhead: Int)
+
+/** Chat completion settings.
+  *
+  * See ollama defaults: https://github.com/ollama/ollama/blob/main/api/types.go#L592
+  *
+  * @param logitBias
+  *   Modify the likelihood of specified tokens appearing in the completion.
+  * @param maxTokens
+  *   The maximum number of tokens to generate in the chat completion.
+  * @param n
+  *   How many chat completion choices to generate for each input message.
+  * @param presencePenalty
+  *   Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far,
+  *   increasing the model's likelihood to talk about new topics.
+  *
+  * @param frequencyPenalty
+  *   Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so
+  *   far, decreasing the model's likelihood to repeat the same line verbatim.
+  * @param temperature
+  *   What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while
+  *   lower values like 0.2 will make it more focused and deterministic.
+  * @param topP
+  *   An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the
+  *   tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are
+  *   considered.
+  */
+final case class ChatCompletionSettings(
+  logitBias: Option[Map[String, Float]] = None,
+  maxTokens: Option[Int] = None,
+  n: Option[Int] = None,
+  frequencyPenalty: Option[Double] = None,
+  presencePenalty: Option[Double] = None,
+  temperature: Option[Double] = None,
+  topP: Option[Double] = None,
+) derives ConfiguredJsonValueCodec
+
+object ChatCompletionSettings:
+  lazy val default: ChatCompletionSettings =
+    ChatCompletionSettings()

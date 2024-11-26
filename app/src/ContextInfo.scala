@@ -12,7 +12,7 @@ import org.http4s.QueryParamDecoder
 import io.scalaland.chimney.dsl.*
 import io.scalaland.chimney.*
 
-import ContextInfoFormDto.given
+import ContextInfo.given
 
 final case class ContextInfo(
   id: ContextId,
@@ -20,6 +20,7 @@ final case class ContextInfo(
   description: String,
   promptTemplate: PromptTemplate,
   retrievalSettings: RetrievalSettings,
+  chatCompletionSettings: ChatCompletionSettings,
   chatModel: Model,
   embeddingsModel: Model,
 )
@@ -39,15 +40,25 @@ object ContextInfo:
       description = description,
       promptTemplate = PromptTemplate.default,
       retrievalSettings = RetrievalSettings.default,
+      chatCompletionSettings = ChatCompletionSettings.default,
       chatModel = Model.defaultChatModel,
       embeddingsModel = Model.defaultEmbeddingsModel,
     )
+
+  given PartialTransformer[String, PromptTemplate]         = stringJsonPartial
+  given PartialTransformer[String, RetrievalSettings]      = stringJsonPartial
+  given PartialTransformer[String, ChatCompletionSettings] = stringJsonPartial
+  given PartialTransformer[String, Model]                  = stringJsonPartial
+
+  private def stringJsonPartial[T: JsonValueCodec]: PartialTransformer[String, T] =
+    PartialTransformer.fromFunction(_.unsafeParseToJson[T])
 
 final case class ContextInfoFormDto(
   name: String,
   description: String,
   promptTemplate: String,
   retrievalSettings: String,
+  chatCompletionSettings: String,
   chatModel: Model,
   embeddingsModel: Model,
 ):
@@ -60,12 +71,6 @@ final case class ContextInfoFormDto(
       .leftMap(_.mkString(", "))
 
 object ContextInfoFormDto:
-  given PartialTransformer[String, PromptTemplate] =
-    PartialTransformer.fromFunction(_.unsafeParseToJson[PromptTemplate])
-
-  given PartialTransformer[String, RetrievalSettings] =
-    PartialTransformer.fromFunction(_.unsafeParseToJson[RetrievalSettings])
-
   given QueryParamDecoder[Model] = QueryParamDecoder[String].emap: str =>
     Model.from(str).toRight(ParseFailure(str, "Invalid chat model"))
 
@@ -74,6 +79,8 @@ object ContextInfoFormDto:
     field[String]("description").sanitized,
     field[String]("promptTemplate").sanitized,
     field[String]("retrievalSettings").sanitized,
+    field[String]("chatCompletionSettings").sanitized,
     field[Model]("chatModel"),
     field[Model]("embeddingsModel"),
   ).mapN(ContextInfoFormDto.apply)
+

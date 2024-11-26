@@ -179,7 +179,7 @@ object ContextView extends HtmxView:
       ),
       div(
         role               := "tabpanel",
-        cls                := "tab-content bg-base-100 pt-2 md:pt-6",
+        cls                := "tab-content bg-base-100 pt-2 md:pt-6 md:h-[calc(100dvh-16rem)] overflow-y-scroll",
         content,
       ),
     )
@@ -193,6 +193,9 @@ object ContextView extends HtmxView:
 
     val retrievalSettingsJson =
       contextInfo.retrievalSettings.asJson(indentStep = 2).combineAll
+
+    val chatCompletionSettingsJson =
+      contextInfo.chatCompletionSettings.asJson(indentStep = 2).combineAll
 
     div(
       form(
@@ -220,6 +223,11 @@ object ContextView extends HtmxView:
           labelValue = "Retrieval Settings",
           fieldName = "retrievalSettings",
           value = retrievalSettingsJson,
+        ),
+        formTextarea(
+          labelValue = "Chat Completion Settings",
+          fieldName = "chatCompletionSettings",
+          value = chatCompletionSettingsJson,
         ),
         div(
           cls := "grid grid-cols-1 md:grid-cols-2 gap-2",
