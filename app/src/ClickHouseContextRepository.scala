@@ -66,7 +66,7 @@ final class ClickHouseContextRepository(client: ClickHouseClient[IO])(using Logg
       .streamQueryJson[ContextInfoRetrievedRow]:
         i"""
         $selectContextFragment
-        WHERE name = $name
+        WHERE name = '$name'
         ORDER BY id, updated_at DESC
         LIMIT 1 BY id
         FORMAT JSONEachRow

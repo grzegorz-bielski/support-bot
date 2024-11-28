@@ -26,9 +26,10 @@ object AppConfig:
 
   def load: IO[AppConfig] =
     for
-      env      <- Env[IO].get("ENV").map(_.flatMap(EnvType.fromString).getOrElse(EnvType.Local))
-      logLevel <- Env[IO].get("LOG_LEVEL").map(_.flatMap(Level.get).getOrElse(Level.Info))
-      path     <- Env[IO].get("LOG_PATH")
+      env                <- Env[IO].get("ENV").map(_.flatMap(EnvType.fromString).getOrElse(EnvType.Local))
+      logLevel           <- Env[IO].get("LOG_LEVEL").map(_.flatMap(Level.get).getOrElse(Level.Info))
+      path               <- Env[IO].get("LOG_PATH")
+      slackSigningSecret <- Env[IO].get("SLACK_SIGNING_SECRET").map(_.getOrElse("<not_provided>"))
     yield AppConfig(
       host = ipv4"0.0.0.0",
       port = port"8081",
@@ -38,7 +39,7 @@ object AppConfig:
       loadFixtures = false,
       maxEntitySizeInBytes = 1073741824L, // 1GiB
       inferenceEngine = InferenceEngine.OpenAIOllama(
-        url = "http://localhost:11434/v1"
+        url = "http://localhost:11434/v1",
       ),
       clickhouse = ClickhouseConfig(
         url = "http://localhost:8123",
@@ -48,8 +49,8 @@ object AppConfig:
         resetOnStart = false,
       ),
       slack = SlackBotConfig(
-        signingSecret = NonEmptyString.unsafeFrom("1b5d3e182525f8ad0296e457bf6aa559")
-      )
+        signingSecret = slackSigningSecret,
+      ),
     )
 
 enum EnvType:
@@ -61,7 +62,7 @@ object EnvType:
 
 enum InferenceEngine:
   case OpenAIOllama(
-    url: String
+    url: String,
   )
 
 final case class ClickhouseConfig(
@@ -73,5 +74,5 @@ final case class ClickhouseConfig(
 )
 
 final case class SlackBotConfig(
-  signingSecret: NonEmptyString
+  signingSecret: String,
 )

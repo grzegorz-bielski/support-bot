@@ -15,3 +15,4 @@ node_modules
 content
 app/resources/static/generated.css
 app/resources/static/bundle.js*
+*.env

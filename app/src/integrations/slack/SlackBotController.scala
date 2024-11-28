@@ -16,20 +16,20 @@ import org.typelevel.log4cats.Logger
 final class SlackBotController(
   slackClient: SlackAPIClient[IO],
   cmdRunner: CommandRunner[IO],
-  signingSecret: SigningSecret,
+  signingSecret: String,
 )(using logger: Logger[IO])
     extends TopLevelController:
   protected def prefix: String = "slack"
 
   protected def routes: IO[HttpRoutes[IO]] = IO:
     SignatureValidator
-      .withValidSignature[IO](signingSecret)
+      .withValidSignature[IO](NonEmptyString.unsafeFrom(signingSecret))
       .apply:
         AuthedRoutes.of[SlackUser, IO]:
           case req @ POST -> Root / "slashCmd" as _ => cmdRunner.processRequest(req)
 
 object SlackBotController:
-  def of(commandMapper: CommandMapper[IO], signingSecret: NonEmptyString)(using
+  def of(commandMapper: CommandMapper[IO], signingSecret: String)(using
     Logger[IO],
   ): Resource[IO, SlackBotController] =
     for
