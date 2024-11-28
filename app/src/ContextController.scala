@@ -97,7 +97,7 @@ final class ContextController(using
                 )
               case resp @ ChatService.Response.Finished(_)         =>
                 ServerSentEvent(
-                  data = none,
+                  data = ChatView.responseClearEventSourceListener().render.some,
                   eventType = resp.eventType.toString.some,
                 )
             .evalTap: msg =>
@@ -127,9 +127,8 @@ final class ContextController(using
                      .start // fire and forget
             res <-
               Ok(
-                // TODO: creating sse for each query is not efficient and error-prone
-                // we should have a single sse stream for each chat context workbench
                 ChatView.responseMessage(
+                  queryId = queryId,
                   query = query,
                   sseUrl = s"/$prefix/${context.id}/chat/responses?queryId=$queryId",
                   queryResponseEvent = ChatService.ResponseType.Partial.toString,

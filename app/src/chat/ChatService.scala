@@ -93,7 +93,6 @@ final class ChatServiceImpl(
   import ChatService.*
   import ChatServiceImpl.*
 
-  // TODO: do not use xml tags in llama
   // private def appPrompt(query: String, context: Option[String]) = Prompt(
   //   taskContext = "You are an expert Q&A system that is trusted around the world.".some,
   //   toneContext = "You should maintain a professional and friendly tone.".some,
