@@ -1,4 +1,5 @@
 package supportbot
+package common
 
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import scala.util.Try

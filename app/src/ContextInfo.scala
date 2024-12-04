@@ -12,6 +12,8 @@ import org.http4s.QueryParamDecoder
 import io.scalaland.chimney.dsl.*
 import io.scalaland.chimney.*
 
+import supportbot.common.*
+
 import ContextInfo.given
 
 final case class ContextInfo(

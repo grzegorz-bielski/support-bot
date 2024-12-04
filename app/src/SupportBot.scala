@@ -14,7 +14,8 @@
 
 //> using dep com.softwaremill.sttp.openai::fs2:0.2.5
 //> using dep com.softwaremill.sttp.openai::core:0.2.5
-//> using dep com.softwaremill.sttp.client4::cats:4.0.0-M17
+//> using dep com.softwaremill.sttp.client4::cats:4.0.0-M19
+//> using dep com.softwaremill.sttp.client4::jsoniter:4.0.0-M19
 
 //> using dep io.scalaland::chimney::1.5.0
 
@@ -78,11 +79,11 @@ object SupportBot extends ResourceApp.Forever:
       _ <- ClickHouseMigrator.migrate().toResource
       _ <- Fixtures.loadFixtures().toResource
 
-      slackCmdMapper     <- SlackCommandMapperService.of
-      slackBotController <- SlackBotController.of(
-                              commandMapper = slackCmdMapper,
-                              signingSecret = AppConfig.get.slack.signingSecret,
-                            )
+      // slackCmdMapper     <- SlackCommandMapperService.of
+      // slackBotController <- SlackBotController.of(
+      //                         commandMapper = slackCmdMapper,
+      //                         signingSecret = AppConfig.get.slack.signingSecret,
+      //                       )
 
       contextController <- ContextController.of()
       homeController     = HomeController()
@@ -91,7 +92,7 @@ object SupportBot extends ResourceApp.Forever:
              controllers = Vector(
                contextController,
                homeController,
-               slackBotController,
+              //  slackBotController,
              ),
            )
     yield ()

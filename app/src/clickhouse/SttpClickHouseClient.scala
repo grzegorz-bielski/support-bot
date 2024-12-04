@@ -9,7 +9,6 @@ import cats.syntax.all.*
 import fs2.{Pipe, Stream, Chunk, text}
 import sttp.capabilities.fs2.Fs2Streams
 import sttp.client4.*
-import sttp.client4.httpclient.fs2.HttpClientFs2Backend
 import org.typelevel.log4cats.syntax.*
 import org.typelevel.log4cats.*
 import com.github.plokhotnyuk.jsoniter_scala.core.*

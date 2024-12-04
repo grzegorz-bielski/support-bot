@@ -14,7 +14,7 @@ object ModelCodecs:
         Model.values
           .find(_.name == decoded)
           .getOrElse:
-            // jsoniter parsing is not pure anyways...
+            // (!) jsoniter parsing is not pure anyways, decoding is expected to be wrapped in some try-catch
             throw new IllegalArgumentException(s"Unknown model: $decoded")
 
       def encodeValue(x: Model, out: JsonWriter): Unit =

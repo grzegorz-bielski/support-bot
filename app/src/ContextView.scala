@@ -8,6 +8,7 @@ import scalatags.Text.tags2.{progress, details, summary}
 
 import supportbot.chat.*
 import supportbot.rag.*
+import supportbot.common.*
 import supportbot.viewpartials.*
 
 object ContextView extends HtmxView:
