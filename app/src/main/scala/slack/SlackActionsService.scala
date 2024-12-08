@@ -22,8 +22,8 @@ trait SlackActionsService[F[_]]:
   def processSlashCommand(payload: SlashCommandPayload): F[Actions[F]]
 
 object SlackActionsService:
-  def of(using ChatService[IO], ContextRepository[IO]): Resource[IO, SlackActionsService[IO]] =
-    for given Logger[IO] <- Slf4jLogger.create[IO].toResource
+  def of(using ChatService[IO], ContextRepository[IO]): IO[SlackActionsService[IO]] =
+    for given Logger[IO] <- Slf4jLogger.create[IO]
     yield SlackActionsServiceImpl()
 
 final class SlackActionsServiceImpl(using

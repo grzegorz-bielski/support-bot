@@ -37,6 +37,7 @@ object SlackSignatureVerifier:
     verifier: SlackSignature.Verifier,
   )(request: Request[F]): F[Either[String, AuthInfo]] =
     for
+      _         <- info"Received slack request: $request"
       timestamp <- getHeaderOrRaiseError(request, X_SLACK_REQUEST_TIMESTAMP)
       signature <- getHeaderOrRaiseError(request, X_SLACK_SIGNATURE)
       body      <- request.as[String]
@@ -44,7 +45,10 @@ object SlackSignatureVerifier:
         if verifier.isValid(timestamp, body, signature)
         then
           info"Request with signature $signature is valid".as:
-            AuthInfo(timestamp = Instant.parse(timestamp)).asRight[String]
+            AuthInfo(
+              // assuming the the timestamp is a unix timestamp and since signature is valid we can parse it just fine
+              timestamp = Instant.ofEpochSecond(timestamp.toLong),
+            ).asRight[String]
         else
           error"Request with signature $signature is invalid".as:
             SlackAuthError

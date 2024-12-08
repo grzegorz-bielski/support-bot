@@ -6,15 +6,15 @@ import cats.effect.*
 import cats.syntax.all.*
 import cats.effect.syntax.all.*
 import org.http4s.*
-import org.typelevel.log4cats.Logger
+import org.typelevel.log4cats.*
+import org.typelevel.log4cats.slf4j.*
+import org.typelevel.log4cats.syntax.*
 
 import supportbot.common.{*, given}
 
 final class SlackBotController(
-  actionsService: SlackActionsService[IO],
-  actionsExecutor: SlackActionsExecutor[IO],
   signingSecret: String,
-)(using logger: Logger[IO])
+)(using logger: Logger[IO], actionsService: SlackActionsService[IO], actionsExecutor: SlackActionsExecutor[IO])
     extends TopLevelController:
   protected def prefix: String = "slack"
 
@@ -25,6 +25,8 @@ final class SlackBotController(
     authed:
       AuthedRoutes.of[AuthInfo, IO]:
         case arReg @ POST -> Root / "slashCmd" as _ =>
+          given EntityDecoder[IO, SlashCommandPayload] = FormDataDecoder.formEntityDecoder
+
           for
             payload <- arReg.req.as[SlashCommandPayload]
             actions <- actionsService.processSlashCommand(payload)
@@ -33,11 +35,14 @@ final class SlackBotController(
           yield res
 
 object SlackBotController:
-  def of(actionsService: SlackActionsService[IO], signingSecret: String)(using
+  def of(using
+    AppConfig,
     Logger[IO],
     SttpBackend,
+    SlackActionsService[IO],
+    SlackActionsExecutor[IO],
   ): Resource[IO, SlackBotController] =
     for
-      actionsExecutor <- SlackActionsExecutor.of.toResource
-      _               <- actionsExecutor.stream.compile.drain.background
-    yield SlackBotController(actionsService, actionsExecutor, signingSecret)
+      given Logger[IO] <- Slf4jLogger.create[IO].toResource
+      _                <- summon[SlackActionsExecutor[IO]].stream.compile.drain.background
+    yield SlackBotController(signingSecret = AppConfig.get.slack.signingSecret)
