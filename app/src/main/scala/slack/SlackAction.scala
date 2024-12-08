@@ -7,6 +7,3 @@ enum SlackAction:
     responseUrl: String,
     payload: MsgPayload,
   )
-
-extension [F[_]](underlying: F[SlackAction])
-  def single: Vector[F[SlackAction]] = Vector(underlying)

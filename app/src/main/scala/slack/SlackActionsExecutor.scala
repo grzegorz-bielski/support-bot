@@ -35,6 +35,8 @@ final class SlackActionsExecutorImpl(queue: Queue[IO, IO[SlackAction]])(using
     Stream
       .fromQueueUnterminated(queue)
       .evalMap:
+      // TODO: action eval could be slow and block the queue
+      // test it out with .parEvalMap(10):
         _.attempt.flatMap:
           case Left(err) =>
             logger.error(err)("Failed to execute action: eval failed")

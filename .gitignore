@@ -13,6 +13,6 @@ metals.sbt
 node_modules
 
 content
-app/resources/static/generated.css
-app/resources/static/bundle.js*
+app/src/main/resources/static/generated.css
+app/src/main/resources/static/bundle.js*
 *.env

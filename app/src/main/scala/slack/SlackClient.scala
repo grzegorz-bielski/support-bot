@@ -13,10 +13,10 @@ trait SlackClient[F[_]]:
   def respondTo(responseUrl: String, response: MsgPayload): F[Unit]
 
 final class SttpSlackClient(using backend: SttpBackend) extends SlackClient[IO]:
-    def respondTo(responseUrl: String, response: MsgPayload): IO[Unit] = 
-        val request = basicRequest
-            .post(uri"$responseUrl")
-            .body(response)
-            .contentType("application/json")
-
-        backend.send(request).void
+  def respondTo(responseUrl: String, response: MsgPayload): IO[Unit] =
+    basicRequest
+      .post(uri"$responseUrl")
+      .body(response)
+      .contentType("application/json")
+      .send(backend)
+      .void

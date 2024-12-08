@@ -44,7 +44,7 @@ final class StaticAssetsController(using Logger[IO], AppConfig) extends TopLevel
   def prefix = "static"
   def routes =
     if AppConfig.get.isDev then
-      warn"Using local resources".as(fileService[IO](FileService.Config("./app/resources/static")))
+      warn"Using local resources".as(fileService[IO](FileService.Config("./app/src/main/resources/static")))
     else
       // assuming production env - we use the resources embedded in the JAR
       info"Using embedded resources".as(resourceServiceBuilder[IO]("/static").toRoutes)

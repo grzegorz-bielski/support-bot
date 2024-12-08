@@ -31,7 +31,6 @@
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.31.3
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-macros::2.31.3
 
-//> using dep io.laserdisc::slack4s:3.1.0
 //> using dep com.slack.api:slack-app-backend:1.44.2
 
 //> using test.dep com.dimafeng::testcontainers-scala-munit::0.41.4

@@ -10,16 +10,11 @@ import org.typelevel.log4cats.*
 import org.typelevel.log4cats.slf4j.*
 import org.typelevel.log4cats.syntax.*
 
-// import io.laserdisc.slack4s.slack.*
-// import com.slack.api.app_backend.slash_commands.payload.SlashCommandPayload
-
 import supportbot.chat.*
 
 import ChatService.*
 
 // see: https://github.com/laserdisc-io/slack4s/blob/main/docs/tutorial.md
-
-// TODO: rip out the slack4s and use the slack api directly
 
 type Actions[F[_]] = Vector[F[SlackAction]]
 
@@ -91,14 +86,15 @@ final class SlackActionsServiceImpl(using
     )
 
   private def errorResponse(responseUrl: String, text: String): Actions[IO] =
-    SlackAction
-      .WebHookResponse(
-        responseUrl = responseUrl,
-        payload = MsgPayload.fromBlocks(
-          Block.Section(
-            Block.Text.Plain(text),
+    Vector(
+      SlackAction
+        .WebHookResponse(
+          responseUrl = responseUrl,
+          payload = MsgPayload.fromBlocks(
+            Block.Section(
+              Block.Text.Plain(text),
+            ),
           ),
-        ),
-      )
-      .pure[IO]
-      .single
+        )
+        .pure[IO],
+    )

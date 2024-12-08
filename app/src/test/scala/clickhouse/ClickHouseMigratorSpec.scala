@@ -73,7 +73,7 @@ object ClickHouseMigratorSpec:
 
   lazy val exposedPort         = 8123
   lazy val clickHouseContainer = GenericContainer(
-    dockerImage = "clickhouse/clickhouse-server:24.3.12-alpine",
+    dockerImage = "clickhouse/clickhouse-server:24.11.1-alpine",
     exposedPorts = Seq(exposedPort),
     waitStrategy = Wait.forHttp("/"),
     env = Map(

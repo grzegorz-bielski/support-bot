@@ -5,7 +5,6 @@ import cats.effect.std.*
 import cats.syntax.all.*
 import scribe.Level
 import com.comcast.ip4s.*
-import eu.timepit.refined.types.string.NonEmptyString
 
 final case class AppConfig(
   host: Host,
