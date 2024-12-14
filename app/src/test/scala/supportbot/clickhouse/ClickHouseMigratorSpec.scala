@@ -27,7 +27,7 @@ class ClickHouseMigratorSpec extends CatsEffectSuite, TestContainersFixtures:
       given SttpClickHouseClient = client
       given Logger[IO]           = NoOpLogger[IO]
 
-      val migrator = ClickHouseMigrator(
+      val migrator = ClickHouseMigrator[IO](
         config = ClickHouseMigrator.Config(
           databaseName = clickHouseDb,
           fresh = true,

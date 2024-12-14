@@ -74,4 +74,6 @@ final case class ClickhouseConfig(
 
 final case class SlackBotConfig(
   signingSecret: String,
+  maxConcurrentSessions: Int = 10,
+  maxSessions: Int = 100,
 )

@@ -1,6 +1,7 @@
 package supportbot
 package clickhouse
 
+import cats.*
 import cats.effect.*
 import cats.syntax.all.*
 import unindent.*
@@ -23,7 +24,7 @@ import ClickHouseMigrator.*
   *
   * Inspired by https://github.com/VVVi/clickhouse-migrations
   */
-final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO], logger: Logger[IO]):
+final class ClickHouseMigrator[F[_]: {Concurrent, Logger, ClickHouseClient as clickHouseClient}](config: Config):
   private val migrationsTable = "schema_migrations"
 
   /** Migrate the database to the latest version.
@@ -31,7 +32,7 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
     * @param migrations
     *   list of migrations to be applied sequentially
     */
-  def migrate(migrations: Vector[Migration]): IO[Unit] =
+  def migrate(migrations: Vector[Migration]): F[Unit] =
     given QuerySettings = QuerySettings.default.copy(wait_end_of_query = 1.some)
 
     val versionedMigrations = migrations.mapWithIndex(_.asVersioned(_))
@@ -43,7 +44,7 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
       _ <- applyMigrations(versionedMigrations)
     yield ()
 
-  private def applyMigrations(migrations: Vector[VersionedMigration])(using querySettings: QuerySettings): IO[Unit] =
+  private def applyMigrations(migrations: Vector[VersionedMigration])(using querySettings: QuerySettings): F[Unit] =
     for
       appliedMigrationsByVersion <- getAppliedMigrations
       migrationsWithChecksums     = migrations.map(m => m -> calculateChecksum(m.ddl))
@@ -54,20 +55,20 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
                                       // assuming the migration is idempotent (IF NOT EXISTS, etc),
                                       // it's safe to apply it multiple times in case of migration table update failure
                                       info"Applying migration ${migration.name}" *>
-                                        client.executeQuery(migration.ddl)(using ddlQuerySettings) *>
+                                        clickHouseClient.executeQuery(migration.ddl)(using ddlQuerySettings) *>
                                         commitMigration(migration, checksum) *>
                                         info"Migration ${migration.name} applied"
     yield ()
 
-  private def commitMigration(migration: VersionedMigration, checksum: String)(using QuerySettings): IO[Unit] =
-    client.executeQuery:
+  private def commitMigration(migration: VersionedMigration, checksum: String)(using QuerySettings): F[Unit] =
+    clickHouseClient.executeQuery:
       i"""
       INSERT INTO $migrationsTable (version, checksum, name) 
       VALUES (${migration.version}, '$checksum', '${migration.name}')
       """
 
-  private def getAppliedMigrations(using QuerySettings): IO[Map[Int, AppliedMigrationRow]] =
-    client
+  private def getAppliedMigrations(using QuerySettings): F[Map[Int, AppliedMigrationRow]] =
+    clickHouseClient
       .streamQueryJson[AppliedMigrationRow]:
         i"""
         SELECT version, checksum, name 
@@ -82,17 +83,18 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
   private def validateMigrationsAgainstApplied(
     migrationsWithChecksums: Vector[(VersionedMigration, String)],
     appliedMigrationsByVersion: Map[Int, AppliedMigrationRow],
-  ): IO[Unit] =
+  ): F[Unit] =
     if appliedMigrationsByVersion.isEmpty then info"No migrations are applied yet"
     else
       migrationsWithChecksums
         .traverse: (migration, checksum) =>
           for
             appliedMigration <-
-              IO.fromOption(appliedMigrationsByVersion.get(migration.version)):
-                Error.MigrationMissing(migration.name, migration.version)
+              MonadThrow[F].fromOption(
+                appliedMigrationsByVersion.get(migration.version), 
+                Error.MigrationMissing(migration.name, migration.version))
             _                <-
-              IO.raiseUnless(appliedMigration.checksum == checksum):
+              MonadThrow[F].raiseUnless(appliedMigration.checksum == checksum):
                 Error.MigrationChecksumMismatch(migration.name, migration.version)
           yield ()
         .void *>
@@ -105,19 +107,19 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
       .map("%02x".format(_))
       .mkString
 
-  private def optionallyDropDatabase(using QuerySettings): IO[Unit] =
-    IO.whenA(config.fresh):
-      client.executeQuery:
+  private def optionallyDropDatabase(using QuerySettings): F[Unit] =
+    Applicative[F].whenA(config.fresh):
+      clickHouseClient.executeQuery:
         i"DROP DATABASE IF EXISTS ${config.databaseName}"
       *> warn"Database ${config.databaseName} was just dropped! Here's your fresh start."
 
-  private def createDatabase(using QuerySettings): IO[Unit] =
-    client.executeQuery:
+  private def createDatabase(using QuerySettings): F[Unit] =
+    clickHouseClient.executeQuery:
       i"CREATE DATABASE IF NOT EXISTS ${config.databaseName}"
     *> info"Database ${config.databaseName} is created"
 
-  private def createMigrationTable(using QuerySettings): IO[Unit] =
-    client.executeQuery:
+  private def createMigrationTable(using QuerySettings): F[Unit] =
+    clickHouseClient.executeQuery:
       i"""
       CREATE TABLE IF NOT EXISTS $migrationsTable (
           uid UUID DEFAULT generateUUIDv4(),
@@ -132,18 +134,19 @@ final class ClickHouseMigrator(config: Config)(using client: ClickHouseClient[IO
     *> info"Migration table $migrationsTable is created"
 
 object ClickHouseMigrator:
-  def of(config: Config)(using ClickHouseClient[IO]): IO[ClickHouseMigrator] =
-    for given Logger[IO] <- Slf4jLogger.create[IO]
-    yield ClickHouseMigrator(config)
+  def of[F[_]: {Async, ClickHouseClient, LoggerFactory}](config: Config): ClickHouseMigrator[F] =
+    given Logger[F] = LoggerFactory[F].getLogger
+    ClickHouseMigrator(config)
 
-  def migrate()(using ClickHouseClient[IO], AppConfig): IO[Unit] =
+  // app specific
+  def migrate()(using AppConfig, ClickHouseClient[IO]): IO[Unit] =
     val chConfig       = AppConfig.get.clickhouse
     val migratorConfig = ClickHouseMigrator.Config(
       databaseName = chConfig.database,
       fresh = chConfig.resetOnStart,
     )
 
-    of(migratorConfig).flatMap(_.migrate(AllMigrations))
+    of[IO](migratorConfig).migrate(AllMigrations)
 
   /** Configuration for the ClickHouse migrator.
     *

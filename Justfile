@@ -24,5 +24,11 @@ test:
     export ENV=Test
     scala-cli test .
 
+test-only filter:
+    #!/usr/bin/env bash
+    echo "Running tests for {{filter}}"
+    export ENV=Test
+    scala-cli test . --test-only "{{filter}}"
+
 inference-bb engine model:
     scala-cli run . --main-class supportbot.bench.InferenceBB -- {{engine}} {{model}}
