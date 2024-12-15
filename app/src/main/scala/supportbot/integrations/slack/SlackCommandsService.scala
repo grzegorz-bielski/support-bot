@@ -69,7 +69,7 @@ final class SlackCommandsServiceImpl(using
       given SessionId <- SessionId.of
       given QueryId   <- QueryId.of
 
-      parsedQuery = parseQuery(payload.text)
+      parsedQuery = parseQuery(payload)
       envelope   <-
         parsedQuery match
           case None =>
@@ -94,9 +94,9 @@ final class SlackCommandsServiceImpl(using
             yield action
     yield envelope
 
-  private def parseQuery(payloadText: String): Option[UserQuery] =
+  private def parseQuery(payload: SlashCommandPayload): Option[UserQuery] =
     Try:
-      val parts = payloadText.trim.split(" ").toList // TODO: sanitize it better
+      val parts = payload.text.trim.split(" ").toList // TODO: sanitize it better
 
       parts match
         case head :: tail => UserQuery(context = head, query = tail.mkString(" ")).some
@@ -114,11 +114,14 @@ final class SlackCommandsServiceImpl(using
       handler = for
         _ <- slackClient.respondTo(
                responseUrl = responseUrl,
-               response = MsgPayload.fromBlocks(
-                 Block.Section(
-                   Block.Text.Plain(s"Querying the ${contextInfo.name} context with ${userQuery}..."),
+               response =
+                 val text = s"Querying the ${contextInfo.name} context with ${userQuery}..."
+                 MsgPayload.fromBlocks(
+                   text = text,
+                   blocks = Block.Section(
+                     Block.Text.Plain(text),
+                   ),
                  ),
-               ),
              )
 
         chatInput     = contextInfo.toChatInput(queryId = queryId, query = ChatQuery(userQuery))
@@ -127,7 +130,8 @@ final class SlackCommandsServiceImpl(using
         _ <- slackClient.respondTo(
                responseUrl = responseUrl,
                response = MsgPayload.fromBlocks(
-                 Block.Section(
+                 text = chatResponse,
+                 blocks = Block.Section(
                    Block.Text.Markdown(chatResponse),
                  ),
                ),
@@ -145,7 +149,8 @@ final class SlackCommandsServiceImpl(using
       handler = slackClient.respondTo(
         responseUrl = responseUrl,
         response = MsgPayload.fromBlocks(
-          Block.Section(
+          text = text,
+          blocks = Block.Section(
             Block.Text.Plain(text),
           ),
         ),

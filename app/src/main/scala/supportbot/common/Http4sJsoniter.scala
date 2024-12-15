@@ -9,7 +9,7 @@ import org.http4s.headers.*
 
 // borrowed from https://github.com/cornerman/http4s-jsoniter
 
-given [F[_]: Concurrent, A: JsonValueCodec]: EntityDecoder[F, A] =
+given [F[_]: Concurrent, A: JsonValueCodec] => EntityDecoder[F, A] =
   EntityDecoder.decodeBy(MediaType.application.json):
     EntityDecoder
       .byteArrayDecoder[F]
@@ -23,7 +23,7 @@ given [F[_]: Concurrent, A: JsonValueCodec]: EntityDecoder[F, A] =
         )
       .decode(_, strict = true)
 
-given [F[_], A: JsonValueCodec]: EntityEncoder[F, A] =
+given [F[_], A: JsonValueCodec] => EntityEncoder[F, A] =
   EntityEncoder.encodeBy[F, A](Headers(`Content-Type`(MediaType.application.json))):
     EntityEncoder
       .byteArrayEncoder[F]

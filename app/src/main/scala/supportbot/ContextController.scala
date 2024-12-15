@@ -124,7 +124,7 @@ final class ContextController(using
                          embeddingsModel = context.embeddingsModel,
                        ),
                      )
-                     .start // fire and forget
+                    //  .start // fire and forget -- handled by the supervisor
             res <-
               Ok(
                 ChatView.responseMessage(

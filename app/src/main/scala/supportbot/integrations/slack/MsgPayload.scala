@@ -13,12 +13,9 @@ final case class MsgPayload(
 )
 
 object MsgPayload:
-  def fromBlocks(blocks: Block*) =
+  def fromBlocks(text: String, blocks: Block*) =
     MsgPayload(
-      text = blocks
-        .collectFirst:
-          case b: Block.Text => b.text
-        .getOrElse(""),
+      text = text,
       blocks = blocks.toVector,
     )
 

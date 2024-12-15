@@ -4,7 +4,7 @@ package slack
 
 import fs2.*
 import cats.effect.*
-import cats.effect.std.Queue
+import cats.effect.std.*
 import java.util.UUID
 import cats.syntax.all.*
 import unindent.*
@@ -22,78 +22,76 @@ class SlackCommandsServiceSpec extends CatsEffectSuite:
   val testUUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
   test("should schedule and execute slack actions"):
-    given Logger[IO]      = NoOpLogger[IO]
-    given SlackClient[IO] = new SlackClient[IO]:
+    for
+      sentMessages    <- Ref.of[IO, Vector[MsgPayload]](Vector.empty)
+      sentChatQueries <- Ref.of[IO, Vector[ChatService.Input]](Vector.empty)
+      promise         <- Deferred[IO, Unit]
+
+      commandsNumber = 20
+      ctxName        = "ctx-name"
+
+      given Logger[IO]      = NoOpLogger[IO]
+      given SlackClient[IO] = new SlackClient[IO]:
                                 def respondTo(responseUrl: String, response: MsgPayload): IO[Unit] =
-                                  IO.println(s"Responding to $responseUrl with $response") *>
-                                    IO.sleep(5.second)
-                                
-    given ChatService[IO] = new ChatService[IO]:
-                                def processQuery(input: Input): IO[Unit] = IO.unit
-                                def subscribeToQueryResponses(queryId: QueryId): Stream[IO, ChatService.Response] = Stream.empty
+                                  sentMessages
+                                    .updateAndGet(_ :+ response)
+                                    .flatMap: updated =>
+                                      if updated.size == commandsNumber * 2 // 2 responses per command
+                                      then promise.complete(()).void
+                                      else IO.unit
 
-    SlackCommandsService
-      .of(maxConcurrentSessions = 10, maxSessions = 100)
-      .flatMap: cmdService =>
-          cmdService.process(
-            SlackSlashCommandPayload(
-              apiAppId = "test",
-              teamId = "test",
-              teamDomain = "test",
-              enterpriseId = none,
-              enterpriseName = none,
-              channelId = "test",
-              channelName = "test",
-              userId = "test",
-              command = "test",
-              text = "test",
-              responseUrl = "test",
-              triggerId = "test",
-              isEnterpriseInstall = false,
-            )
-          )
+      given ChatService[IO] = new ChatService[IO]:
+                                def processQuery(input: Input): IO[Unit] =
+                                  sentChatQueries.update(_ :+ input)
 
-    // for
-    //   // queue                <- Queue.unbounded[IO, SlackActionEnvelope[IO]]
-    //   // given Logger[IO]      = NoOpLogger[IO]
-    //   // given SlackClient[IO] = new SlackClient[IO]:
-    //   //                           def respondTo(responseUrl: String, response: MsgPayload): IO[Unit] =
-    //   //                             IO.println(s"Responding to $responseUrl with $response") *>
-    //   //                               IO.sleep(5.second) *>
-    //   //                               IO.unit
-                                
-    //   // given ChatService[IO] = new ChatService[IO]:
-    //   //                           def processQuery(input: Input): IO[Unit] = IO.unit
-    //   //                           def subscribeToQueryResponses(queryId: QueryId): Stream[IO, ChatService.Response] = Stream.empty
+                                def subscribeToQueryResponses(queryId: QueryId): Stream[IO, ChatService.Response] =
+                                    Stream(
+                                      ChatService.Response.Partial(queryId, "res"),
+                                      ChatService.Response.Partial(queryId, "ponse"),
+                                      ChatService.Response.Finished(queryId),
+                                    )
 
-    //   cmdService 
-    //     <- SlackCommandsService.of(maxConcurrentSessions = 10, maxSessions = 100)
-    //   // fiber               <- slackActionsExecutor.stream.compile.drain.start
+      given ContextRepository[IO] = new ContextRepository[IO]:
+                                      def createOrUpdate(info: ContextInfo): IO[Unit]        = ???
+                                      def getAll: IO[Vector[ContextInfo]]                    = ???
+                                      def get(contextId: ContextId): IO[Option[ContextInfo]] = ???
+                                      def getByName(name: String): IO[Vector[ContextInfo]]   =
+                                        IO(
+                                          Vector(
+                                            ContextInfo.default(
+                                              id = ContextId(testUUID),
+                                              name = ctxName,
+                                              description = "test",
+                                            ),
+                                          ),
+                                        )
+                                      def delete(id: ContextId): IO[Unit]                    = ???
 
-    //   // _ <- Vector
-    //   //        .tabulate(4): n =>
-    //   //          SlackActionEnvelope(
-    //   //            queryId = QueryId(testUUID),
-    //   //            sessionId = SessionId(testUUID),
-    //   //            action = SlackAction
-    //   //              .WebHookResponse("http://localhost", MsgPayload.fromBlocks(Block.Text.Plain(s"test-$n")))
-    //   //              .pure[IO],
-    //   //          )
-    //   //        .traverse_(slackActionsExecutor.schedule)
+      commandsToProcess = Vector.tabulate(commandsNumber): n =>
+                            SlashCommandPayload(
+                              apiAppId = "test",
+                              teamId = "test",
+                              teamDomain = "test",
+                              enterpriseId = none,
+                              enterpriseName = none,
+                              channelId = "test",
+                              channelName = "test",
+                              userId = s"test-$n",
+                              command = "test",
+                              text = s"$ctxName hello $n",
+                              responseUrl = "test",
+                              triggerId = "test",
+                              isEnterpriseInstall = false,
+                            )
 
-    //   // _ <- fiber.join
-    //   // _ <- IO.sleep(20.second).toResource
-    //   // _ <- IO.println("Cancelling fiber").toResource
-    //   // _ <- fiber.cancel.to
+      _ <- SlackCommandsService
+             .of(maxConcurrentSessions = 10, maxSessions = 100)
+             .use: cmdService =>
+               commandsToProcess.parTraverse_(cmdService.process) *> promise.get
 
-    // // _ <- slackActionsExecutor.schedule(IO.pure(action))
-    // yield ()
-    // val queue = Queue.unbounded[IO, IO[SlackAction]].unsafeRunSync()
-    // val executor = SlackActionsExecutorImpl(queue)
-
-    // val action = SlackAction.WebHookResponse("http://localhost", "test")
-    // executor.schedule(IO.pure(action)).unsafeRunSync()
-
-    // val stream = executor.stream.compile.toList.unsafeRunSync()
-    // assertEquals(stream, List(()))
-  // }
+      _ <- sentMessages.get.map(_.size) assertEquals commandsNumber * 2 // 2 responses per command
+      
+      expectedQueries = commandsToProcess.map(_.text.drop(ctxName.length + 1))
+      _ <- sentChatQueries.get.map(_.size) assertEquals commandsNumber
+      _ <- sentChatQueries.get.map(_.map(_.query.content).toSet) assertEquals expectedQueries.toSet
+    yield ()

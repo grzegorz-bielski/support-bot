@@ -2,7 +2,9 @@ package supportbot
 package chat
 
 import fs2.{Chunk as _, io as _, *}
+import cats.*
 import cats.effect.*
+import cats.effect.std.*
 import cats.syntax.all.*
 import org.typelevel.log4cats.*
 import org.typelevel.log4cats.slf4j.*
@@ -17,8 +19,7 @@ import supportbot.rag.vectorstore.*
 import supportbot.rag.*
 
 trait ChatService[F[_]]:
-  /** Start the query processing. This might take some time to complete, so it usually should be run in the background
-    * fiber.
+  /** Starts the query processing, which usually runs in the background.
     *
     * @param input
     *   The input for the query.
@@ -34,7 +35,7 @@ trait ChatService[F[_]]:
     */
   def subscribeToQueryResponses(queryId: QueryId): Stream[F, ChatService.Response]
 
-  /** Ask a question and wait for the response.
+  /** Asks a question and waits for the response.
     *
     * @param input
     *   The input for the query.
@@ -42,14 +43,12 @@ trait ChatService[F[_]]:
     *   The response content.
     */
   final def ask(input: ChatService.Input)(using Concurrent[F]): F[String] =
-    Concurrent[F]
-      .background(processQuery(input))
-      .use: _ =>
-        subscribeToQueryResponses(input.queryId)
-          .collectWhile:
-            case ChatService.Response.Partial(_, content) => content
-          .compile
-          .string
+    processQuery(input) *>
+      subscribeToQueryResponses(input.queryId)
+        .collectWhile:
+          case ChatService.Response.Partial(_, content) => content
+        .compile
+        .string
 
 object ChatService:
   final case class Input(
@@ -81,6 +80,19 @@ object ChatService:
     case Partial(queryId: QueryId, content: String) extends Response(ResponseType.Partial)
 
     case Finished(queryId: QueryId) extends Response(ResponseType.Finished)
+
+  final class Supervised[F[_]: Apply](
+    chatService: ChatService[F],
+    supervisor: Supervisor[F],
+  ) extends ChatService[F]:
+    def processQuery(input: ChatService.Input): F[Unit] =
+      supervisor.supervise(chatService.processQuery(input)).void
+
+    export chatService.subscribeToQueryResponses
+
+  object Supervised:
+    def of[F[_]: Concurrent](chatService: ChatService[F]): Resource[F, ChatService[F]] =
+      Supervisor[F].map(Supervised(chatService, _))
 
 final class ChatServiceImpl(
   pubSub: PubSub[IO],
@@ -176,4 +188,5 @@ object ChatServiceImpl:
     for
       given Logger[IO] <- Slf4jLogger.create[IO].toResource
       pubSub           <- PubSub.resource[IO]
-    yield ChatServiceImpl(pubSub)
+      chatService      <- ChatService.Supervised.of(ChatServiceImpl(pubSub))
+    yield chatService
