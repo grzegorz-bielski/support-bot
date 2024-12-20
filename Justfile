@@ -4,10 +4,13 @@ app-dev:
     export ENV=Local
     (
         trap 'kill 0' SIGINT; 
-        scala-cli run . --restart & 
+        scala-cli run . --restart --main-class supportbot.SupportBot & 
         npm run tailwind:watch --workspace app &
         npm run esbuild:watch --workspace app
     )
+
+app-compile:
+    scala-cli compile .
 
 app-infra-fresh:
     docker-compose -f ./docker-compose.yml up --pull=always
@@ -20,3 +23,12 @@ test:
     echo "Running tests"
     export ENV=Test
     scala-cli test .
+
+test-only filter:
+    #!/usr/bin/env bash
+    echo "Running tests for {{filter}}"
+    export ENV=Test
+    scala-cli test . --test-only "{{filter}}"
+
+inference-bb engine model:
+    scala-cli run . --main-class supportbot.bench.InferenceBB -- {{engine}} {{model}}

@@ -2,10 +2,10 @@
     "name": "app",
     "version": "1.0.0",
     "scripts": {
-        "tailwind:watch": "tailwindcss -i ./src/input.css -o ./resources/static/generated.css --watch",
-        "tailwind:prod": "tailwindcss -i ./src/input.css -o ./resources/static/generated.css --minify",
-        "esbuild:watch": "esbuild ./elements/index.ts --bundle --sourcemap --watch --outfile=./resources/static/bundle.js",
-        "esbuild:prod": "esbuild ./elements/index.ts --bundle --minify --outfile=./resources/static/bundle.js"
+        "tailwind:watch": "tailwindcss -i ./src/input.css -o ./src/main/resources/static/generated.css --watch",
+        "tailwind:prod": "tailwindcss -i ./src/input.css -o ./src/main/resources/static/generated.css --minify",
+        "esbuild:watch": "esbuild ./elements/index.ts --bundle --sourcemap --watch --outfile=./src/main/resources/static/bundle.js",
+        "esbuild:prod": "esbuild ./elements/index.ts --bundle --minify --outfile=./src/main/resources/static/bundle.js"
     },
     "devDependencies": {
         "@tailwindcss/forms": "^0.5.9",
