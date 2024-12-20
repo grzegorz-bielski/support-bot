@@ -115,7 +115,7 @@ final class SlackCommandsServiceImpl(using
         _ <- slackClient.respondTo(
                responseUrl = responseUrl,
                response =
-                 val text = s"Querying the ${contextInfo.name} context with ${userQuery}..."
+                 val text = s"Querying the ${contextInfo.name} context with `${userQuery}` ..."
                  MsgPayload.fromBlocks(
                    text = text,
                    blocks = Block.Section(
