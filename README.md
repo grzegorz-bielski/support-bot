@@ -33,7 +33,7 @@ R --> |top result| CM[Chat LLM]
 CM --> |response| Slack
 ```
 
-The above diagram show the ideal hybrid search scenario which was aspiration of this system.
+The above diagram shows the ideal hybrid search scenario.
 **At the moment only the `dense vectors way` is implemented.** This already can be sufficient enough for many workloads. 
 The `sparse vectors way` remains to be unimplemented due to ClickHouse's limitations, see the paragraph below for more.
 
@@ -72,30 +72,34 @@ As last resort we can try out a mixed-approach for keyword search in which we wi
 
 ## dev
 
+0. See the `AppConfig` for config options
+
 1. Create `local.env` file and load it with `set -a && . ./local.env && set +a`
   ```
   SLACK_SIGNING_SECRET=<your slack app signing>
   ```
 
-2. Put some `.pdf` fixtures inside the `/app/content/` directory
+2. Put some `.pdf` fixtures inside the `/app/content/` directory (or disable fixture loading in the `AppConfig`)
 
 3. Run the ClickHouse
   ```zsh
   docker-compose -f ./docker-compose.yml up
   ```
 
-4. Run the app
+4. Run Open AI API compatible inference engine such as Ollama
+
+5. Run the app
 
   ```zsh
   just
   ```
 
-5. Start the tunnel (only for slack app development)
+6. Start the tunnel (only for slack app development)
   ```
   cloudflared tunnel --url http://localhost:8081
   ```
 
-6. Add / modify the slack app manifest at https://api.slack.com/apps. Include the url from the cloudflare tunnel obtained above.
+7. Add / modify the slack app manifest at https://api.slack.com/apps. Include the url from the cloudflare tunnel obtained above.
   ```yml
   _metadata:
     major_version: 1
