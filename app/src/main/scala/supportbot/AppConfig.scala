@@ -35,7 +35,7 @@ object AppConfig:
       env = env,
       logLevel = logLevel,
       logPath = path,
-      loadFixtures = false,
+      loadFixtures = true,
       maxEntitySizeInBytes = 1073741824L, // 1GiB
       inferenceEngine = InferenceEngine.OpenAIOllama(
         url = "http://localhost:11434/v1",
@@ -45,7 +45,7 @@ object AppConfig:
         username = "default",
         password = "default",
         database = "default",
-        resetOnStart = false,
+        resetOnStart = true,
       ),
       slack = SlackBotConfig(
         signingSecret = slackSigningSecret,
