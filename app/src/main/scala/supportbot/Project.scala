@@ -24,8 +24,6 @@
 //> using dep dev.langchain4j:langchain4j:0.36.2
 //> using dep dev.langchain4j:langchain4j-document-parser-apache-tika:0.36.2
 
-///> using dep org.apache.pdfbox:pdfbox:3.0.3, langchain4j-document-parser-apache-tika uses different version
-
 //> using dep com.davegurnell::unindent:1.8.0
 
 //> using dep com.github.plokhotnyuk.jsoniter-scala::jsoniter-scala-core::2.31.3
