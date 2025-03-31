@@ -2,6 +2,8 @@
 
 An experimental AI support system for making private RAG powered internal **Slack** chatbots with ClickHouse and any Open AI compatible inference engine such as Ollama, Cortex, vLLM, or OpenRouter.
 
+See the next iteration of the projct: https://github.com/grzegorz-bielski/docrecall
+
 ![Admin UI Screenshot](admin-ui-screenshot.png)
 
 ## Features
